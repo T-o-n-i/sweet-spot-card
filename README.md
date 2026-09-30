@@ -73,10 +73,13 @@ positions:
       x: 2.0
       y: 3.6
     - option: Dining table
+      name: Table         # optional label, defaults to the option
       id: dining
       x: 6.3
       y: 2.9
 ```
+
+Each item needs `option` (the `input_select` option it stands for), `x` and `y`. `id` is only needed with `weight_entity`. `name` changes the label on the card without touching the option.
 
 - **`storage`**: an `input_text` (max. length 255) where the card remembers where you dragged the dot for each place. The marker of the active place moves with the dot, and *Reset position* puts it back to the `x`/`y` from the configuration. Without `storage`, every place starts at its configured position again.
 - **`weight_entity`**: a pattern for `input_number` helpers (range −1 to 1, step 0.1) that receive the balance instead of the volumes. `{position}` is replaced by the item `id`, `{speaker}` by the speaker `id`. A value of −1 means half the average volume, +1 double. Use this if an automation should apply the balance, for example when the place is changed by voice. The card itself then does not touch the volumes.

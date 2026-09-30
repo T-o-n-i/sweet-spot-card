@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { computeWeights, computeVolumes, meanVolume, volumesForMean, pickColors, similarColors } from "./sweet-spot-card.js";
+import { computeWeights, computeVolumes, meanVolume, volumesForMean, pickColors, similarColors, roomOutline, outlineToShape, CORNERS } from "./sweet-spot-card.js";
 
 const speakers = [
   { id: "arabella", x: 0.58, y: 0.64 },
@@ -68,4 +68,16 @@ assert.match(orange.listener, /info/);
 const mono = pickColors(theme({ "--primary-color": "#4caf50", "--accent-color": "#4caf50", "--success-color": "#4caf50" }));
 assert.equal(new Set(Object.values(mono)).size, 3);
 assert.ok(similarColors("rgb(3, 169, 244)", "rgb(3, 155, 229)"));
+// Room shapes: the hand-written outline from the living room is an L.
+const living = [[0, 0], [8.6, 0], [8.6, 7.9], [4.1, 7.9], [4.1, 4.22], [0, 4.22]];
+const parsed = outlineToShape(living, 8.6, 7.9);
+assert.equal(parsed.shape, "l");
+assert.equal(parsed.cutout.corner, "bottom-left");
+assert.ok(Math.abs(parsed.cutout.width - 4.1) < 1e-9 && Math.abs(parsed.cutout.height - 3.68) < 1e-9);
+assert.deepEqual(outlineToShape(roomOutline({ width: 5, height: 3 }), 5, 3), { shape: "rectangle" });
+for (const corner of CORNERS) {
+  const room = { width: 6, height: 4, shape: "l", cutout: { corner, width: 2, height: 1.5 } };
+  assert.deepEqual(outlineToShape(roomOutline(room), 6, 4), { shape: "l", cutout: room.cutout });
+}
+assert.equal(outlineToShape([[0, 0], [5, 0], [3, 3]], 5, 3), null);
 console.log("ok");

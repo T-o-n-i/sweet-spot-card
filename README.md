@@ -16,6 +16,10 @@ Works with any `media_player` that supports `volume_set` (Sonos, HEOS, Cast, …
 
 Copy `sweet-spot-card.js` to `/config/www/` and add it as a dashboard resource: `/local/sweet-spot-card.js`, type *JavaScript module*.
 
+## Visual editor
+
+Add the card from the dashboard editor and set it up there: room size and shape (rectangle or L-shape), mode, strength, speakers and places. The floor plan in the editor lets you drag speakers, places and the corner of the L-shape into position. When you choose an `input_select` for the places, the editor creates one place per option.
+
 ## Minimal configuration
 
 Without any helpers the card sets the speaker volumes directly while you drag.
@@ -49,7 +53,9 @@ The card uses your theme: speakers in the primary colour, places in the success 
 |---|---|---|
 | `title` | – | Card title |
 | `room.width`, `room.height` | required | Size of the room |
-| `room.outline` | rectangle | Room shape as a list of `[x, y]` points, e.g. for an L-shaped room |
+| `room.shape` | `rectangle` | `rectangle` or `l` |
+| `room.cutout` | – | For `shape: l`: the missing corner as `corner` (`bottom-left`, `bottom-right`, `top-left`, `top-right`), `width` and `height` |
+| `room.outline` | – | Any other shape as a list of `[x, y]` points. Wins over `shape`; the editor can only show it |
 | `room.image` | – | Background image instead of the outline, e.g. `/local/floorplan.png` |
 | `speakers` | required | At least two, each with `entity`, `x`, `y`, optional `name` and `id` |
 | `mode` | `listener` | `listener`: nearer speakers get quieter. `fader`: nearer speakers get louder, like the fader in a car |

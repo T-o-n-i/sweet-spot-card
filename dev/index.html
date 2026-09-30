@@ -10,8 +10,11 @@
 </style></head>
 <body>
 <div id="host"></div>
+<h2 style="font-size:16px;margin-top:24px">Editor</h2>
+<div id="editor" style="background:#fff;padding:12px;border-radius:12px"></div>
 <pre id="log"></pre>
 <script type="module">
+import "./fake-ha-form.js";
 import "../sweet-spot-card.js";
 const log = (m) => (document.getElementById("log").textContent = m + "\n" + document.getElementById("log").textContent);
 const mp = (v) => ({ state: "playing", attributes: { volume_level: v } });
@@ -20,7 +23,7 @@ const states = {
   "media_player.wohnzimmer_treppe": mp(0.06),
   "media_player.kuche_kaffeeecke": mp(0.06),
   "media_player.kuche_kuchensitzecke": mp(0.06),
-  "input_select.sonos_player": { state: "Sofa", attributes: {} },
+  "input_select.sonos_player": { state: "Sofa", attributes: { options: ["Arabella", "Sofa", "Esstisch", "Küche", "Küchensitzecke"] } },
   "input_text.sonos_horplatze": { state: "{}", attributes: {} },
 };
 for (const o of ["arabella","sofa","esstisch","kuche","kuchensitzecke"])
@@ -44,4 +47,14 @@ card.setConfig(await (await fetch("config.json")).json());
 card.hass = hass;
 document.getElementById("host").appendChild(card);
 window.card = card;
+const editor = document.createElement("sweet-spot-card-editor");
+editor.hass = hass;
+editor.setConfig(await (await fetch("config.json")).json());
+editor.addEventListener("config-changed", (e) => {
+  log("config-changed " + JSON.stringify(e.detail.config.room));
+  try { card.setConfig(e.detail.config); card.hass = { ...hass, states: { ...states } }; } catch (err) { log("card: " + err.message); }
+  editor.setConfig(e.detail.config);
+});
+document.getElementById("editor").appendChild(editor);
+window.editor = editor;
 </script></body></html>

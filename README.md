@@ -64,37 +64,55 @@ The card uses your theme: speakers in the primary colour, places in the success 
 | `master` | `true` | Show a slider for the overall volume. It raises or lowers all speakers together and keeps the balance |
 | `positions` | – | Saved listening positions, see below |
 
-## Saved positions
+## Saved places
 
-If you have fixed places (sofa, dining table, …) and want to switch between them from automations or voice assistants, add an `input_select` with one option per place. The card shows each place as a marker; tapping it selects the option.
+If you have fixed places (sofa, dining table, …), the card can remember a balance for each of them. With the blueprint below, switching the place also works from voice assistants and automations, without the dashboard.
+
+### Setup with the blueprint (recommended)
+
+1. Create two helpers under *Settings → Devices & services → Helpers*:
+   - a **Dropdown** (`input_select`) with one option per place, e.g. *Sofa*, *Dining table*
+   - a **Text** (`input_text`) with maximum length **255**, the card's memory
+2. In the card editor, choose the dropdown as *Selection*, the text helper as *Memory*, and switch on *Volumes are set by the Sweet Spot automation*. The editor creates one place per option; drag them into position.
+3. Import the blueprint and create an automation from it with the same dropdown, text helper and speakers:
+
+   [![Import blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2FT-o-n-i%2Fsweet-spot-card%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fsweet_spot_card%2Fapply_place.yaml)
+
+   or import `https://github.com/T-o-n-i/sweet-spot-card/blob/main/blueprints/automation/sweet_spot_card/apply_place.yaml` under *Settings → Automations → Blueprints*.
+
+Now tap a place on the card, or select it from anywhere else (`input_select.select_option`), and the automation sets the volumes. When you drag the dot, the card saves the new balance and the automation applies it.
+
+The memory holds the position and the balance of every place. 255 characters are enough for about five places with four speakers, fewer with long place names. The card warns when it is full.
+
+### Configuration
 
 ```yaml
 positions:
-  entity: input_select.listening_position
-  storage: input_text.listening_positions        # optional
-  weight_entity: input_number.balance_{position}_{speaker}   # optional
+  entity: input_select.listening_place
+  storage: input_text.sweet_spot_memory
+  apply: automation
   items:
     - option: Sofa
-      id: sofa
       x: 2.0
       y: 3.6
     - option: Dining table
       name: Table         # optional label, defaults to the option
-      id: dining
       x: 6.3
       y: 2.9
 ```
 
-Each item needs `option` (the `input_select` option it stands for), `x` and `y`. `id` is only needed with `weight_entity`. `name` changes the label on the card without touching the option.
+Each item needs `option` (the `input_select` option it stands for), `x` and `y`. `name` changes the label on the card without touching the option.
 
-- **`storage`**: an `input_text` (max. length 255) where the card remembers where you dragged the dot for each place. The marker of the active place moves with the dot, and *Reset position* puts it back to the `x`/`y` from the configuration. Without `storage`, every place starts at its configured position again.
-- **`weight_entity`**: a pattern for `input_number` helpers (range −1 to 1, step 0.1) that receive the balance instead of the volumes. `{position}` is replaced by the item `id`, `{speaker}` by the speaker `id`. A value of −1 means half the average volume, +1 double. Use this if an automation should apply the balance, for example when the place is changed by voice. The card itself then does not touch the volumes.
+- **`storage`**: the `input_text` where the card keeps the position and balance of each place. The marker of the active place moves with the dot, and *Reset position* puts it back to the `x`/`y` from the configuration.
+- **`apply: automation`**: the card only saves, the blueprint automation sets the volumes. Without it, the card sets the volumes itself when you release the dot, which only works while the dashboard is open.
 
-Without `weight_entity` the card sets the volumes directly when you release the dot.
+### Alternative: one helper per place and speaker
+
+`weight_entity` writes the balance into `input_number` helpers (range −1 to 1, step 0.1) instead, one per place and speaker, e.g. `input_number.balance_{position}_{speaker}`. `{position}` is replaced by the item `id`, `{speaker}` by the speaker `id`. You then need your own automation that turns these values into volumes. This is how the card started out; for new setups the blueprint is simpler.
 
 ## Overall volume
 
-The slider below the room shows the average volume of all speakers. Moving it sets a new average and keeps the balance. With `weight_entity` and an active place, the balance is taken from the helpers, so repeated changes at low volumes do not drift because of rounding.
+The slider below the room shows the average volume of all speakers. Moving it sets a new average and keeps the balance. With an active place, the balance is taken from the memory (or the helpers), so repeated changes at low volumes do not drift because of rounding.
 
 ## How the balance is calculated
 

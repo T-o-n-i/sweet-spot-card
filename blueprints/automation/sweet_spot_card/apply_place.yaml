@@ -1,0 +1,100 @@
+blueprint:
+  name: Sweet Spot Card – apply listening place
+  description: >
+    Sets the volumes of your speakers whenever the listening place changes or
+    the Sweet Spot Card saves a new balance. The average volume stays the same,
+    only the ratio between the speakers changes.
+
+
+    Use the same place selection, memory helper and speakers as in the card, and
+    set "Volumes are set by the Sweet Spot automation" in the card editor.
+    Switching the place from a voice assistant or another automation then works
+    without the dashboard.
+  domain: automation
+  source_url: https://github.com/T-o-n-i/sweet-spot-card/blob/main/blueprints/automation/sweet_spot_card/apply_place.yaml
+  input:
+    place:
+      name: Place selection
+      description: The input_select with one option per listening place.
+      selector:
+        entity:
+          filter:
+            domain: input_select
+    storage:
+      name: Memory
+      description: The input_text where the card stores places and balance.
+      selector:
+        entity:
+          filter:
+            domain: input_text
+    speakers:
+      name: Speakers
+      description: The same speakers as in the card. The order does not matter.
+      selector:
+        entity:
+          multiple: true
+          filter:
+            domain: media_player
+
+mode: restart
+max_exceeded: silent
+
+triggers:
+  - trigger: state
+    entity_id: !input place
+    not_to:
+      - unavailable
+      - unknown
+  - trigger: state
+    entity_id: !input storage
+    not_to:
+      - unavailable
+      - unknown
+
+variables:
+  place_entity: !input place
+  storage_entity: !input storage
+  speaker_input: !input speakers
+  # Entries look like {"Sofa": [x, y, w1, w2, …]}; the weights are tenths,
+  # ordered by speaker entity_id. Without an entry all speakers play equally.
+  targets: >
+    {%- set speakers = ((speaker_input if speaker_input is list else [speaker_input]) | sort) -%}
+    {%- set data = states(storage_entity) | from_json(default={}) -%}
+    {%- set entry = data.get(states(place_entity), []) if data is mapping else [] -%}
+    {%- set ns = namespace(w=[], vols=[], out=[]) -%}
+    {%- for e in speakers -%}
+      {%- set w = (entry[loop.index0 + 2] | float(0)) / 10 if entry | count == speakers | count + 2 else 0 -%}
+      {%- set ns.w = ns.w + [2 ** w] -%}
+      {%- set v = state_attr(e, 'volume_level') -%}
+      {%- if v is number and not is_state(e, 'unavailable') -%}
+        {%- set ns.vols = ns.vols + [v] -%}
+      {%- endif -%}
+    {%- endfor -%}
+    {%- if ns.vols | count > 0 -%}
+      {%- set mean = (ns.vols | sum) / (ns.vols | count) -%}
+      {%- set fmean = (ns.w | sum) / (ns.w | count) -%}
+      {%- for e in speakers -%}
+        {%- if state_attr(e, 'volume_level') is number and not is_state(e, 'unavailable') -%}
+          {%- set vol = [[(mean * ns.w[loop.index0] / fmean) | round(2), 0] | max, 1] | min -%}
+          {%- set ns.out = ns.out + [{'entity': e, 'volume': vol}] -%}
+        {%- endif -%}
+      {%- endfor -%}
+    {%- endif -%}
+    {{ ns.out }}
+
+conditions:
+  - alias: At least one speaker reports a volume
+    condition: template
+    value_template: "{{ targets | count > 0 }}"
+
+actions:
+  - alias: Set the volumes
+    repeat:
+      for_each: "{{ targets }}"
+      sequence:
+        - action: media_player.volume_set
+          target:
+            entity_id: "{{ repeat.item.entity }}"
+          data:
+            volume_level: "{{ repeat.item.volume }}"
+          continue_on_error: true

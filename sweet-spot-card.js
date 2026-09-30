@@ -6,7 +6,7 @@
  * MIT License
  */
 
-const CARD_VERSION = "0.4.0";
+const CARD_VERSION = "0.5.0";
 
 const DEFAULTS = {
   mode: "listener", // "listener": nearer speakers get quieter; "fader": nearer speakers get louder
@@ -66,6 +66,7 @@ const STRINGS = {
     drag_hint: "Drag the dot or tap a position",
     drag_hint_free: "Drag the dot",
     missing: "Entity not found",
+    storage_full: "The memory helper is full (255 characters); the balance of this place was not saved. Use shorter place names or fewer places.",
   },
   de: {
     reset: "Position zurücksetzen",
@@ -74,6 +75,7 @@ const STRINGS = {
     drag_hint: "Punkt ziehen oder Platz antippen",
     drag_hint_free: "Punkt ziehen",
     missing: "Entität nicht gefunden",
+    storage_full: "Der Speicher-Helfer ist voll (255 Zeichen), die Balance dieses Platzes wurde nicht gespeichert. Kürzere Platznamen oder weniger Plätze helfen.",
   },
 };
 
@@ -120,6 +122,33 @@ export function volumesForMean(mean, weights) {
     Math.min(1, Math.max(0, Math.round((mean * f) / fMean * 100) / 100))
   );
 }
+
+/* -------------------------------- storage -------------------------------- */
+
+// The memory helper holds one entry per place: [x, y, w1, w2, …]. The weights
+// are stored as tenths, ordered by speaker entity_id, so the blueprint can read
+// them without knowing the order of the speakers in the card.
+
+function sortedOrder(speakers) {
+  return speakers.map((s, i) => i).sort((a, b) =>
+    speakers[a].entity < speakers[b].entity ? -1 : speakers[a].entity > speakers[b].entity ? 1 : 0);
+}
+
+export function encodeEntry(dot, weights, speakers) {
+  return [dot.x, dot.y, ...sortedOrder(speakers).map((i) => Math.round(weights[i] * 10))];
+}
+
+/** Weights in card order from a stored entry, or null if there are none. */
+export function decodeWeights(entry, speakers) {
+  if (!Array.isArray(entry) || entry.length !== speakers.length + 2) return null;
+  const weights = new Array(speakers.length);
+  sortedOrder(speakers).forEach((i, k) => {
+    weights[i] = Number(entry[k + 2]) / 10;
+  });
+  return weights.every(Number.isFinite) ? weights : null;
+}
+
+export const STORAGE_MAX = 255;
 
 /* ------------------------------- room shape ------------------------------- */
 
@@ -282,7 +311,7 @@ class SweetSpotCard extends Base {
 
   _itemPos(item) {
     const saved = this._stored()[item.option];
-    if (Array.isArray(saved) && saved.length === 2) return { x: saved[0], y: saved[1] };
+    if (Array.isArray(saved) && saved.length >= 2) return { x: saved[0], y: saved[1] };
     return { x: item.x, y: item.y };
   }
 
@@ -472,7 +501,10 @@ class SweetSpotCard extends Base {
       ...(this._positions ? [this._positions.entity] : []),
       ...(this._positions?.storage ? [this._positions.storage] : []),
     ].filter((e) => !this._hass.states[e]);
-    this._warn.textContent = missing.length ? `${this._t("missing")}: ${missing.join(", ")}` : "";
+    this._warn.textContent = [
+      missing.length ? `${this._t("missing")}: ${missing.join(", ")}` : "",
+      this._storageFull ? this._t("storage_full") : "",
+    ].filter(Boolean).join(" ");
 
     const active = this._activeItem();
     for (const m of this._markers) m.circle.classList.toggle("active", m.item === active);
@@ -600,6 +632,8 @@ class SweetSpotCard extends Base {
       });
       return volumesForMean(target, weights);
     }
+    const stored = item && decodeWeights(this._stored()[item.option], c.speakers);
+    if (stored) return volumesForMean(target, stored);
     const mean = meanVolume(current);
     if (mean === null) return null;
     return current.map((v) =>
@@ -640,14 +674,24 @@ class SweetSpotCard extends Base {
 
     if (item && pos.storage) {
       const stored = this._stored();
-      stored[item.option] = [dot.x, dot.y];
-      this._hass.callService("input_text", "set_value", {
-        entity_id: pos.storage,
-        value: JSON.stringify(stored),
-      });
+      stored[item.option] = encodeEntry(dot, weights, c.speakers);
+      let value = JSON.stringify(stored);
+      this._storageFull = value.length > STORAGE_MAX;
+      if (this._storageFull) {
+        // Keep at least the position of the dot.
+        stored[item.option] = [dot.x, dot.y];
+        value = JSON.stringify(stored);
+      }
+      if (value.length <= STORAGE_MAX) {
+        this._hass.callService("input_text", "set_value", { entity_id: pos.storage, value });
+      }
     } else if (!item) {
       this._free = dot;
     }
+
+    // With apply: automation the blueprint reads the balance from the memory
+    // helper and sets the volumes, so the card must not set them as well.
+    if (item && pos.apply === "automation" && !pos.weight_entity) return;
 
     if (item && pos.weight_entity) {
       // Weights go into helpers; an automation in HA turns them into volumes.
@@ -722,6 +766,7 @@ const EDITOR_STRINGS = {
     pos_entity: "Selection (input_select)",
     storage: "Memory for dragged places (input_text)",
     weight_entity: "Balance helpers, e.g. input_number.balance_{position}_{speaker}",
+    apply_automation: "Volumes are set by the Sweet Spot automation (blueprint)",
     sync: "Take places from selection",
     min_two: "At least two speakers are needed.",
     custom_note: "The room uses a custom outline from YAML. Choose a shape to replace it.",
@@ -756,6 +801,7 @@ const EDITOR_STRINGS = {
     pos_entity: "Auswahl (input_select)",
     storage: "Speicher für gezogene Plätze (input_text)",
     weight_entity: "Balance-Helfer, z. B. input_number.balance_{position}_{speaker}",
+    apply_automation: "Lautstärken setzt die Sweet-Spot-Automation (Blueprint)",
     sync: "Plätze aus Auswahl übernehmen",
     min_two: "Es werden mindestens zwei Lautsprecher gebraucht.",
     custom_note: "Der Raum hat eine eigene Form aus YAML. Wähle eine Form, um sie zu ersetzen.",
@@ -951,13 +997,19 @@ class SweetSpotCardEditor extends Base {
     return [
       { name: "pos_entity", selector: { entity: { domain: "input_select" } } },
       { name: "storage", selector: { entity: { domain: "input_text" } } },
+      { name: "apply_automation", selector: { boolean: {} } },
       { name: "weight_entity", selector: { text: {} } },
     ];
   }
 
   _positionsData() {
     const p = this._config.positions || {};
-    return { pos_entity: p.entity || "", storage: p.storage || "", weight_entity: p.weight_entity || "" };
+    return {
+      pos_entity: p.entity || "",
+      storage: p.storage || "",
+      apply_automation: p.apply === "automation",
+      weight_entity: p.weight_entity || "",
+    };
   }
 
   _onPositions(v) {
@@ -973,6 +1025,8 @@ class SweetSpotCardEditor extends Base {
       else delete p.storage;
       if (v.weight_entity) p.weight_entity = v.weight_entity;
       else delete p.weight_entity;
+      if (v.apply_automation) p.apply = "automation";
+      else delete p.apply;
       this._config.positions = p;
       if (p.items.length === 0 || old.entity !== p.entity) this._syncItems(false);
     }

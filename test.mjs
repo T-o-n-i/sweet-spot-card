@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { computeWeights, computeVolumes, meanVolume, volumesForMean, pickColors, similarColors, roomOutline, outlineToShape, CORNERS } from "./sweet-spot-card.js";
+import { computeWeights, computeVolumes, meanVolume, volumesForMean, pickColors, similarColors, roomOutline, outlineToShape, CORNERS, encodeEntry, decodeWeights } from "./sweet-spot-card.js";
 
 const speakers = [
   { id: "arabella", x: 0.58, y: 0.64 },
@@ -80,4 +80,20 @@ for (const corner of CORNERS) {
   assert.deepEqual(outlineToShape(roomOutline(room), 6, 4), { shape: "l", cutout: room.cutout });
 }
 assert.equal(outlineToShape([[0, 0], [5, 0], [3, 3]], 5, 3), null);
+// Storage entries: weights sorted by entity_id, round trip in card order.
+const spk = [
+  { entity: "media_player.wohnzimmer_arabella" },
+  { entity: "media_player.wohnzimmer_treppe" },
+  { entity: "media_player.kuche_kaffeeecke" },
+  { entity: "media_player.kuche_kuchensitzecke" },
+];
+const entry = encodeEntry({ x: 1.2, y: 3.4 }, [-1, 0.4, 0.6, 0.3], spk);
+// kuche_kaffeeecke, kuche_kuchensitzecke, wohnzimmer_arabella, wohnzimmer_treppe
+assert.deepEqual(entry, [1.2, 3.4, 6, 3, -10, 4]);
+assert.deepEqual(decodeWeights(entry, spk), [-1, 0.4, 0.6, 0.3]);
+assert.equal(decodeWeights([1.2, 3.4], spk), null);
+assert.equal(decodeWeights([1, 2, 3], spk), null);
+const full = JSON.stringify(Object.fromEntries(["Arabella", "Sofa", "Esstisch", "Küche", "Küchensitzecke"].map((o) => [o, entry])));
+console.log("Speicher     ", full.length, "Zeichen");
+assert.ok(full.length <= 255);
 console.log("ok");

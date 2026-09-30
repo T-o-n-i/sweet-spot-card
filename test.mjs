@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { computeWeights, computeVolumes, meanVolume, volumesForMean } from "./sweet-spot-card.js";
+import { computeWeights, computeVolumes, meanVolume, volumesForMean, pickColors, similarColors } from "./sweet-spot-card.js";
 
 const speakers = [
   { id: "arabella", x: 0.58, y: 0.64 },
@@ -50,4 +50,22 @@ console.log("Gesamt 20 %  ", fmt(louder));
 assert.ok(Math.abs(meanVolume(louder) - 0.2) <= 0.01);
 assert.ok(louder[0] < louder[1]);
 assert.equal(meanVolume([null, 0.1, 0.3]), 0.2);
+// Theme colours: default theme keeps primary/success/accent.
+const hex = (h) => `rgb(${parseInt(h.slice(1, 3), 16)}, ${parseInt(h.slice(3, 5), 16)}, ${parseInt(h.slice(5, 7), 16)})`;
+const theme = (vars) => (css) => {
+  const name = css.match(/--[\w-]+/)[0];
+  const fallback = css.match(/#[0-9a-f]{6}/i)[0];
+  return hex(vars[name] || fallback);
+};
+const std = pickColors(theme({}));
+assert.match(std.speaker, /primary/);
+assert.match(std.position, /success/);
+assert.match(std.listener, /accent/);
+// Orange theme: primary == accent, so the listener moves on to info.
+const orange = pickColors(theme({ "--primary-color": "#ff9800", "--accent-color": "#ff9800" }));
+assert.match(orange.listener, /info/);
+// Everything the same colour: still three different picks.
+const mono = pickColors(theme({ "--primary-color": "#4caf50", "--accent-color": "#4caf50", "--success-color": "#4caf50" }));
+assert.equal(new Set(Object.values(mono)).size, 3);
+assert.ok(similarColors("rgb(3, 169, 244)", "rgb(3, 155, 229)"));
 console.log("ok");

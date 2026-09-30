@@ -39,14 +39,9 @@ speakers:
 
 Coordinates start in the top-left corner of the room.
 
-Colours accept any CSS colour, including theme variables:
+## Colours
 
-```yaml
-colors:
-  speaker: var(--primary-color)
-  listener: "#2196f3"
-  position: green
-```
+The card uses your theme: speakers in the primary colour, places in the success colour and the dot in the accent colour. If two of them look alike in your theme (for example primary and accent are both orange), the card picks the next theme colour instead: info, purple, blue, teal or red.
 
 ## Options
 
@@ -61,9 +56,6 @@ colors:
 | `strength` | `0.5` | 0 = no effect, 1 = full compensation for distance. Rooms reflect sound, so full compensation usually overdoes it |
 | `min_distance` | `0.5` | Distances below this count as this value, so standing right next to a speaker does not mute it |
 | `master` | `true` | Show a slider for the overall volume. It raises or lowers all speakers together and keeps the balance |
-| `colors.speaker` | theme primary colour | Colour of the speakers and the lines to them |
-| `colors.listener` | theme accent colour | Colour of the draggable dot |
-| `colors.position` | theme success colour | Colour of the saved places |
 | `positions` | – | Saved listening positions, see below |
 
 ## Saved positions

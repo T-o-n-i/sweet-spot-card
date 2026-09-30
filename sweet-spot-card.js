@@ -6,7 +6,7 @@
  * MIT License
  */
 
-const CARD_VERSION = "0.3.0";
+const CARD_VERSION = "0.3.1";
 
 const DEFAULTS = {
   mode: "listener", // "listener": nearer speakers get quieter; "fader": nearer speakers get louder
@@ -17,12 +17,46 @@ const DEFAULTS = {
   master: true, // show the slider for the overall volume
 };
 
-// Any CSS colour, including theme variables like "var(--primary-color)".
-const DEFAULT_COLORS = {
-  speaker: "var(--primary-color, #03a9f4)",
-  listener: "var(--accent-color, #ff9800)",
-  position: "var(--success-color, #43a047)",
-};
+// Colours come from the theme only. Each role tries its candidates in order and
+// takes the first one that is clearly different from the roles chosen before it,
+// so themes where e.g. primary and accent are the same still stay readable.
+const COLOR_ROLES = [
+  ["speaker", ["var(--primary-color, #03a9f4)", "var(--info-color, #039be5)", "var(--blue-color, #2196f3)", "var(--teal-color, #009688)"]],
+  ["position", ["var(--success-color, #43a047)", "var(--green-color, #4caf50)", "var(--teal-color, #009688)", "var(--purple-color, #926bc7)"]],
+  ["listener", ["var(--accent-color, #ff9800)", "var(--info-color, #039be5)", "var(--purple-color, #926bc7)", "var(--blue-color, #2196f3)", "var(--red-color, #f44336)"]],
+];
+
+/** True if two "rgb(r, g, b)" strings are too close to tell apart. */
+export function similarColors(a, b) {
+  const pa = (a.match(/[\d.]+/g) || []).map(Number);
+  const pb = (b.match(/[\d.]+/g) || []).map(Number);
+  if (pa.length < 3 || pb.length < 3) return false;
+  return Math.hypot(pa[0] - pb[0], pa[1] - pb[1], pa[2] - pb[2]) < 60;
+}
+
+/**
+ * Picks one candidate per role so that no two roles look alike.
+ * `resolve` turns a CSS colour into "rgb(...)".
+ */
+export function pickColors(resolve) {
+  const chosen = {};
+  const used = [];
+  for (const [role, candidates] of COLOR_ROLES) {
+    let pick = candidates[0];
+    let rgb = resolve(pick);
+    for (const c of candidates) {
+      const r = resolve(c);
+      if (!used.some((u) => similarColors(u, r))) {
+        pick = c;
+        rgb = r;
+        break;
+      }
+    }
+    chosen[role] = pick;
+    used.push(rgb);
+  }
+  return chosen;
+}
 
 const STRINGS = {
   en: {
@@ -130,15 +164,7 @@ class SweetSpotCard extends Base {
     if (pos && pos.weight_entity && config.speakers.some((s) => !s.id)) {
       throw new Error("positions.weight_entity needs an id on every speaker");
     }
-    if (config.colors !== undefined && (typeof config.colors !== "object" || config.colors === null)) {
-      throw new Error("colors must be a map with speaker, listener and/or position");
-    }
-    const colors = { ...DEFAULT_COLORS };
-    for (const [k, v] of Object.entries(config.colors || {})) {
-      // Keep the value from breaking out of the style declaration.
-      if (k in colors && typeof v === "string") colors[k] = v.replace(/[;{}<>]/g, "");
-    }
-    this._config = { ...DEFAULTS, ...config, colors };
+    this._config = { ...DEFAULTS, ...config };
     this._built = false;
     this._local = null; // dot position while dragging or until HA confirms
     if (this._hass) this._build();
@@ -231,7 +257,8 @@ class SweetSpotCard extends Base {
         .title { font-size: 1.2em; font-weight: 500; margin: 4px 0 8px; }
         svg { width: 100%; height: auto; display: block; touch-action: none; user-select: none; }
         .room { fill: var(--secondary-background-color, rgba(127,127,127,.08)); stroke: var(--divider-color, #999); }
-        :host { --ssc-speaker: ${c.colors.speaker}; --ssc-listener: ${c.colors.listener}; --ssc-position: ${c.colors.position}; }
+        :host { --ssc-speaker: ${COLOR_ROLES[0][1][0]}; --ssc-position: ${COLOR_ROLES[1][1][0]}; --ssc-listener: ${COLOR_ROLES[2][1][0]}; }
+        .probe { position: absolute; visibility: hidden; }
         .speaker { fill: var(--ssc-speaker); }
         .speaker.off { fill: var(--disabled-text-color, #999); }
         .ray { stroke: var(--ssc-speaker); stroke-opacity: .25; }
@@ -251,6 +278,7 @@ class SweetSpotCard extends Base {
       </style>
       <ha-card>
         ${c.title ? `<div class="title"></div>` : ""}
+        <span class="probe"></span>
         <div class="warn"></div>
         ${c.master ? `<div class="master"><span class="mlabel"></span><input type="range" min="0" max="100" step="1"><span class="mval"></span></div>` : ""}
         <div class="footer"><span class="hint"></span><button class="reset" hidden></button></div>
@@ -340,13 +368,38 @@ class SweetSpotCard extends Base {
       this._slider = slider;
       this._mval = card.querySelector(".mval");
     }
+    this._probe = card.querySelector(".probe");
+    this._colorsFor = undefined;
     this._hint = card.querySelector(".hint");
     this._warn = card.querySelector(".warn");
     this._built = true;
   }
 
+  _updateColors() {
+    // Re-check when the theme or dark mode changes; needs to be in the DOM.
+    const key = JSON.stringify([this._hass.themes?.theme, this._hass.themes?.darkMode]);
+    if (key === this._colorsFor || !this.isConnected) return;
+    const resolve = (css) => {
+      this._probe.style.color = "";
+      this._probe.style.color = css;
+      return getComputedStyle(this._probe).color;
+    };
+    if (!resolve("var(--primary-color, #03a9f4)")) return;
+    const colors = pickColors(resolve);
+    this.style.setProperty("--ssc-speaker", colors.speaker);
+    this.style.setProperty("--ssc-position", colors.position);
+    this.style.setProperty("--ssc-listener", colors.listener);
+    this._colorsFor = key;
+  }
+
+  connectedCallback() {
+    this._colorsFor = undefined;
+    if (this._hass && this._built) this._updateColors();
+  }
+
   _update() {
     const c = this._config;
+    this._updateColors();
     const missing = [
       ...c.speakers.map((s) => s.entity),
       ...(this._positions ? [this._positions.entity] : []),

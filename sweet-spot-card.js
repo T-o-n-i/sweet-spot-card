@@ -6,7 +6,7 @@
  * MIT License
  */
 
-const CARD_VERSION = "0.2.0";
+const CARD_VERSION = "0.3.0";
 
 const DEFAULTS = {
   mode: "listener", // "listener": nearer speakers get quieter; "fader": nearer speakers get louder
@@ -15,6 +15,13 @@ const DEFAULTS = {
   weight_min: -1,
   weight_max: 1,
   master: true, // show the slider for the overall volume
+};
+
+// Any CSS colour, including theme variables like "var(--primary-color)".
+const DEFAULT_COLORS = {
+  speaker: "var(--primary-color, #03a9f4)",
+  listener: "var(--accent-color, #ff9800)",
+  position: "var(--success-color, #43a047)",
 };
 
 const STRINGS = {
@@ -123,7 +130,15 @@ class SweetSpotCard extends Base {
     if (pos && pos.weight_entity && config.speakers.some((s) => !s.id)) {
       throw new Error("positions.weight_entity needs an id on every speaker");
     }
-    this._config = { ...DEFAULTS, ...config };
+    if (config.colors !== undefined && (typeof config.colors !== "object" || config.colors === null)) {
+      throw new Error("colors must be a map with speaker, listener and/or position");
+    }
+    const colors = { ...DEFAULT_COLORS };
+    for (const [k, v] of Object.entries(config.colors || {})) {
+      // Keep the value from breaking out of the style declaration.
+      if (k in colors && typeof v === "string") colors[k] = v.replace(/[;{}<>]/g, "");
+    }
+    this._config = { ...DEFAULTS, ...config, colors };
     this._built = false;
     this._local = null; // dot position while dragging or until HA confirms
     if (this._hass) this._build();
@@ -216,12 +231,13 @@ class SweetSpotCard extends Base {
         .title { font-size: 1.2em; font-weight: 500; margin: 4px 0 8px; }
         svg { width: 100%; height: auto; display: block; touch-action: none; user-select: none; }
         .room { fill: var(--secondary-background-color, rgba(127,127,127,.08)); stroke: var(--divider-color, #999); }
-        .speaker { fill: var(--primary-color, #03a9f4); }
+        :host { --ssc-speaker: ${c.colors.speaker}; --ssc-listener: ${c.colors.listener}; --ssc-position: ${c.colors.position}; }
+        .speaker { fill: var(--ssc-speaker); }
         .speaker.off { fill: var(--disabled-text-color, #999); }
-        .ray { stroke: var(--primary-color, #03a9f4); stroke-opacity: .25; }
-        .marker { fill: var(--card-background-color, #fff); stroke: var(--success-color, #43a047); cursor: pointer; }
-        .marker.active { fill: var(--success-color, #43a047); fill-opacity: .35; }
-        .dot { fill: var(--accent-color, #ff9800); stroke: var(--card-background-color, #fff); cursor: grab; }
+        .ray { stroke: var(--ssc-speaker); stroke-opacity: .25; }
+        .marker { fill: var(--card-background-color, #fff); stroke: var(--ssc-position); cursor: pointer; }
+        .marker.active { fill: var(--ssc-position); fill-opacity: .35; }
+        .dot { fill: var(--ssc-listener); stroke: var(--card-background-color, #fff); cursor: grab; }
         .label { fill: var(--primary-text-color, #222); }
         .sub { fill: var(--secondary-text-color, #666); }
         .footer { display: flex; justify-content: space-between; align-items: center; margin-top: 8px;

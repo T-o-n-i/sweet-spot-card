@@ -6,7 +6,7 @@
  * MIT License
  */
 
-const CARD_VERSION = "0.1.0";
+const CARD_VERSION = "0.2.0";
 
 const DEFAULTS = {
   mode: "listener", // "listener": nearer speakers get quieter; "fader": nearer speakers get louder
@@ -14,18 +14,21 @@ const DEFAULTS = {
   min_distance: 0.5, // in room units; avoids extreme values right next to a speaker
   weight_min: -1,
   weight_max: 1,
+  master: true, // show the slider for the overall volume
 };
 
 const STRINGS = {
   en: {
-    reset: "Back to marker",
+    reset: "Reset position",
+    master: "Total",
     unavailable: "unavailable",
     drag_hint: "Drag the dot or tap a position",
     drag_hint_free: "Drag the dot",
     missing: "Entity not found",
   },
   de: {
-    reset: "Zurück auf Markierung",
+    reset: "Position zurücksetzen",
+    master: "Gesamt",
     unavailable: "nicht verfügbar",
     drag_hint: "Punkt ziehen oder Platz antippen",
     drag_hint_free: "Punkt ziehen",
@@ -57,9 +60,19 @@ export function computeWeights(dot, speakers, opts) {
  * volumes. Speakers without a current volume are left out of the mean.
  */
 export function computeVolumes(currentVolumes, weights) {
-  const known = currentVolumes.filter((v) => typeof v === "number");
+  const mean = meanVolume(currentVolumes);
+  return mean === null ? null : volumesForMean(mean, weights);
+}
+
+/** Mean of the known volumes, or null if none is known. */
+export function meanVolume(volumes) {
+  const known = volumes.filter((v) => typeof v === "number");
   if (known.length === 0) return null;
-  const mean = known.reduce((a, v) => a + v, 0) / known.length;
+  return known.reduce((a, v) => a + v, 0) / known.length;
+}
+
+/** Volumes (0..1) with the given mean, split according to the weights. */
+export function volumesForMean(mean, weights) {
   const factors = weights.map((w) => Math.pow(2, w));
   const fMean = factors.reduce((a, f) => a + f, 0) / factors.length;
   return factors.map((f) =>
@@ -159,13 +172,15 @@ class SweetSpotCard extends Base {
     }
   }
 
+  _itemPos(item) {
+    const saved = this._stored()[item.option];
+    if (Array.isArray(saved) && saved.length === 2) return { x: saved[0], y: saved[1] };
+    return { x: item.x, y: item.y };
+  }
+
   _dotFromState() {
     const item = this._activeItem();
-    if (item) {
-      const saved = this._stored()[item.option];
-      if (Array.isArray(saved) && saved.length === 2) return { x: saved[0], y: saved[1] };
-      return { x: item.x, y: item.y };
-    }
+    if (item) return this._itemPos(item);
     const { width, height } = this._config.room;
     return this._free || { x: width / 2, y: height / 2 };
   }
@@ -214,10 +229,14 @@ class SweetSpotCard extends Base {
         button { font: inherit; color: var(--primary-color); background: none; border: 1px solid var(--divider-color);
                  border-radius: 8px; padding: 4px 10px; cursor: pointer; }
         .warn { color: var(--error-color, #db4437); font-size: .9em; }
+        .master { display: flex; align-items: center; gap: 12px; margin-top: 8px; color: var(--primary-text-color); }
+        .master input { flex: 1; accent-color: var(--primary-color); min-height: 32px; }
+        .master .mval { min-width: 3.5em; text-align: right; font-variant-numeric: tabular-nums; }
       </style>
       <ha-card>
         ${c.title ? `<div class="title"></div>` : ""}
         <div class="warn"></div>
+        ${c.master ? `<div class="master"><span class="mlabel"></span><input type="range" min="0" max="100" step="1"><span class="mval"></span></div>` : ""}
         <div class="footer"><span class="hint"></span><button class="reset" hidden></button></div>
       </ha-card>`;
 
@@ -257,11 +276,13 @@ class SweetSpotCard extends Base {
       label.textContent = item.name || item.option;
       g.append(circle, label);
       g.addEventListener("pointerdown", (e) => {
+        // The active marker sits under the dot; let a press there start a drag.
+        if (item === this._activeItem()) return;
         e.stopPropagation();
         this._selectPosition(item);
       });
       svg.appendChild(g);
-      this._markers.push({ item, circle });
+      this._markers.push({ item, circle, label });
     }
 
     this._speakerEls = c.speakers.map((s) => {
@@ -288,6 +309,21 @@ class SweetSpotCard extends Base {
     reset.textContent = this._t("reset");
     reset.addEventListener("click", () => this._resetToMarker());
     this._resetBtn = reset;
+    if (c.master) {
+      card.querySelector(".mlabel").textContent = this._t("master");
+      const slider = card.querySelector(".master input");
+      slider.addEventListener("input", () => {
+        this._sliding = true;
+        this._previewMaster(Number(slider.value));
+      });
+      slider.addEventListener("change", () => {
+        this._sliding = false;
+        this._masterUntil = Date.now() + 3000;
+        this._applyMaster(Number(slider.value));
+      });
+      this._slider = slider;
+      this._mval = card.querySelector(".mval");
+    }
     this._hint = card.querySelector(".hint");
     this._warn = card.querySelector(".warn");
     this._built = true;
@@ -309,6 +345,14 @@ class SweetSpotCard extends Base {
     const dot = this._local || this._dotFromState();
     this._drawDot(dot);
 
+    if (this._slider && !this._sliding && !(Date.now() < this._masterUntil)) {
+      const mean = meanVolume(this._currentVolumes());
+      this._slider.disabled = mean === null;
+      const pct = mean === null ? 0 : Math.round(mean * 100);
+      this._slider.value = pct;
+      this._mval.textContent = mean === null ? "–" : `${pct} %`;
+    }
+
     this._hint.textContent = this._t(this._positions ? "drag_hint" : "drag_hint_free");
     this._resetBtn.hidden = !active;
   }
@@ -321,6 +365,16 @@ class SweetSpotCard extends Base {
     const weights = computeWeights(dot, c.speakers, c);
     const current = this._currentVolumes();
     const preview = computeVolumes(current, weights);
+
+    // Markers show where each place currently is; the active one follows the dot.
+    const active = this._activeItem();
+    for (const m of this._markers) {
+      const p = m.item === active ? dot : this._itemPos(m.item);
+      m.circle.setAttribute("cx", p.x);
+      m.circle.setAttribute("cy", p.y);
+      m.label.setAttribute("x", p.x);
+      m.label.setAttribute("y", p.y + this._u * 6);
+    }
 
     c.speakers.forEach((s, i) => {
       const ray = this._rays[i];
@@ -392,6 +446,52 @@ class SweetSpotCard extends Base {
     this._local = { x: item.x, y: item.y };
     this._localUntil = Date.now() + 3000;
     this._apply(this._local);
+  }
+
+  /* ---------------- overall volume ---------------- */
+
+  /** Target volumes for a new overall volume (0..100), keeping the balance. */
+  _masterVolumes(pct) {
+    const c = this._config;
+    const target = pct / 100;
+    const current = this._currentVolumes();
+    const item = this._activeItem();
+    if (item && this._positions.weight_entity) {
+      // Use the stored balance so rounding at low volumes does not add up.
+      const weights = c.speakers.map((s) => {
+        const v = Number(this._hass.states[this._weightEntity(item, s)]?.state);
+        return Number.isFinite(v) ? v : 0;
+      });
+      return volumesForMean(target, weights);
+    }
+    const mean = meanVolume(current);
+    if (mean === null) return null;
+    return current.map((v) =>
+      v === null ? null : Math.min(1, Math.round((mean > 0 ? (v * target) / mean : target) * 100) / 100)
+    );
+  }
+
+  _previewMaster(pct) {
+    this._mval.textContent = `${pct} %`;
+    const volumes = this._masterVolumes(pct);
+    if (!volumes) return;
+    const current = this._currentVolumes();
+    this._speakerEls.forEach((el, i) => {
+      if (current[i] !== null) el.vol.textContent = `${Math.round(volumes[i] * 100)} %`;
+    });
+  }
+
+  async _applyMaster(pct) {
+    const volumes = this._masterVolumes(pct);
+    if (!volumes) return;
+    const current = this._currentVolumes();
+    await Promise.all(this._config.speakers.map((s, i) => {
+      if (current[i] === null || volumes[i] === null) return null;
+      return this._hass.callService("media_player", "volume_set", {
+        entity_id: s.entity,
+        volume_level: volumes[i],
+      });
+    }));
   }
 
   /* ---------------- writing to HA ---------------- */

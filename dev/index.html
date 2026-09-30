@@ -35,6 +35,7 @@ const hass = {
     if (domain === "input_select") states[e] = { ...states[e], state: data.option };
     if (domain === "input_text") states[e] = { ...states[e], state: data.value };
     if (domain === "input_number") states[e] = { ...states[e], state: String(data.value) };
+    if (domain === "media_player") states[e] = { ...states[e], attributes: { ...states[e].attributes, volume_level: data.volume_level } };
     card.hass = { ...hass, states: { ...states } };
     return Promise.resolve();
   },

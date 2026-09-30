@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { computeWeights, computeVolumes } from "./sweet-spot-card.js";
+import { computeWeights, computeVolumes, meanVolume, volumesForMean } from "./sweet-spot-card.js";
 
 const speakers = [
   { id: "arabella", x: 0.58, y: 0.64 },
@@ -44,4 +44,10 @@ for (const [name, p] of Object.entries({
   Sofa: { x: 1.97, y: 3.59 }, Esstisch: { x: 6.29, y: 2.92 },
   Kuechensitzecke: { x: 4.95, y: 6.79 }, Kueche: { x: 6.39, y: 7.39 },
 })) console.log(name.padEnd(13), fmt(computeWeights(p, speakers, {})));
+// Overall volume: new mean, same balance.
+const louder = volumesForMean(0.2, arab);
+console.log("Gesamt 20 %  ", fmt(louder));
+assert.ok(Math.abs(meanVolume(louder) - 0.2) <= 0.01);
+assert.ok(louder[0] < louder[1]);
+assert.equal(meanVolume([null, 0.1, 0.3]), 0.2);
 console.log("ok");

@@ -51,6 +51,7 @@ Coordinates start in the top-left corner of the room.
 | `mode` | `listener` | `listener`: nearer speakers get quieter. `fader`: nearer speakers get louder, like the fader in a car |
 | `strength` | `0.5` | 0 = no effect, 1 = full compensation for distance. Rooms reflect sound, so full compensation usually overdoes it |
 | `min_distance` | `0.5` | Distances below this count as this value, so standing right next to a speaker does not mute it |
+| `master` | `true` | Show a slider for the overall volume. It raises or lowers all speakers together and keeps the balance |
 | `positions` | – | Saved listening positions, see below |
 
 ## Saved positions
@@ -73,10 +74,14 @@ positions:
       y: 2.9
 ```
 
-- **`storage`**: an `input_text` (max. length 255) where the card remembers where you dragged the dot for each place. Without it, the dot always starts on the marker.
+- **`storage`**: an `input_text` (max. length 255) where the card remembers where you dragged the dot for each place. The marker of the active place moves with the dot, and *Reset position* puts it back to the `x`/`y` from the configuration. Without `storage`, every place starts at its configured position again.
 - **`weight_entity`**: a pattern for `input_number` helpers (range −1 to 1, step 0.1) that receive the balance instead of the volumes. `{position}` is replaced by the item `id`, `{speaker}` by the speaker `id`. A value of −1 means half the average volume, +1 double. Use this if an automation should apply the balance, for example when the place is changed by voice. The card itself then does not touch the volumes.
 
 Without `weight_entity` the card sets the volumes directly when you release the dot.
+
+## Overall volume
+
+The slider below the room shows the average volume of all speakers. Moving it sets a new average and keeps the balance. With `weight_entity` and an active place, the balance is taken from the helpers, so repeated changes at low volumes do not drift because of rounding.
 
 ## How the balance is calculated
 

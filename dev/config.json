@@ -11,7 +11,7 @@
   ],
   "positions": {
     "entity": "input_select.sonos_player",
-    "storage": "input_text.sonos_hoerplaetze",
+    "storage": "input_text.sonos_horplatze",
     "weight_entity": "input_number.sonos_{position}_{speaker}",
     "items": [
       { "option": "Arabella", "id": "arabella", "x": 1.22, "y": 1.24 },

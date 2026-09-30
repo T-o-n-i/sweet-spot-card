@@ -1,0 +1,24 @@
+{
+  "type": "custom:sweet-spot-card",
+  "title": "Wohnzimmer",
+  "room": { "width": 8.6, "height": 7.9,
+            "outline": [[0,0],[8.6,0],[8.6,7.9],[4.1,7.9],[4.1,4.22],[0,4.22]] },
+  "speakers": [
+    { "id": "arabella", "entity": "media_player.wohnzimmer_arabella", "name": "Arabella", "x": 0.58, "y": 0.64 },
+    { "id": "treppe", "entity": "media_player.wohnzimmer_treppe", "name": "Treppe", "x": 7.99, "y": 0.71 },
+    { "id": "kaffeeecke", "entity": "media_player.kuche_kaffeeecke", "name": "Kaffeeecke", "x": 8.15, "y": 7.49 },
+    { "id": "kuchensitzecke", "entity": "media_player.kuche_kuchensitzecke", "name": "Küchensitzecke", "x": 4.56, "y": 6.07 }
+  ],
+  "positions": {
+    "entity": "input_select.sonos_player",
+    "storage": "input_text.sonos_hoerplaetze",
+    "weight_entity": "input_number.sonos_{position}_{speaker}",
+    "items": [
+      { "option": "Arabella", "id": "arabella", "x": 1.22, "y": 1.24 },
+      { "option": "Sofa", "id": "sofa", "x": 1.97, "y": 3.59 },
+      { "option": "Esstisch", "id": "esstisch", "x": 6.29, "y": 2.92 },
+      { "option": "Küchensitzecke", "id": "kuchensitzecke", "x": 4.95, "y": 6.79 },
+      { "option": "Küche", "id": "kuche", "x": 6.39, "y": 7.39 }
+    ]
+  }
+}

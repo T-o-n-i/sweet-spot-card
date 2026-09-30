@@ -1,0 +1,46 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sweet Spot Card – Testseite</title>
+<style>
+  :root { --primary-color:#03a9f4; --accent-color:#ff9800; --success-color:#43a047; --primary-text-color:#212121;
+          --secondary-text-color:#727272; --divider-color:#e0e0e0; --card-background-color:#fff; --secondary-background-color:#f5f5f5; }
+  body { font-family: Roboto, system-ui, sans-serif; background:#fafafa; margin:16px; max-width:560px; }
+  ha-card { display:block; background:var(--card-background-color); border-radius:12px; box-shadow:0 1px 3px rgba(0,0,0,.2); }
+  pre { font-size:12px; background:#eee; padding:8px; white-space:pre-wrap; }
+</style></head>
+<body>
+<div id="host"></div>
+<pre id="log"></pre>
+<script type="module">
+import "../sweet-spot-card.js";
+const log = (m) => (document.getElementById("log").textContent = m + "\n" + document.getElementById("log").textContent);
+const mp = (v) => ({ state: "playing", attributes: { volume_level: v } });
+const states = {
+  "media_player.wohnzimmer_arabella": mp(0.06),
+  "media_player.wohnzimmer_treppe": mp(0.06),
+  "media_player.kuche_kaffeeecke": mp(0.06),
+  "media_player.kuche_kuchensitzecke": mp(0.06),
+  "input_select.sonos_player": { state: "Sofa", attributes: {} },
+  "input_text.sonos_hoerplaetze": { state: "{}", attributes: {} },
+};
+for (const o of ["arabella","sofa","esstisch","kuche","kuchensitzecke"])
+  for (const l of ["arabella","treppe","kaffeeecke","kuchensitzecke"])
+    states[`input_number.sonos_${o}_${l}`] = { state: "0.0", attributes: { step: 0.1 } };
+const card = document.createElement("sweet-spot-card");
+const hass = {
+  states, locale: { language: "de" },
+  callService(domain, service, data) {
+    log(`${domain}.${service} ${JSON.stringify(data)}`);
+    const e = data.entity_id;
+    if (domain === "input_select") states[e] = { ...states[e], state: data.option };
+    if (domain === "input_text") states[e] = { ...states[e], state: data.value };
+    if (domain === "input_number") states[e] = { ...states[e], state: String(data.value) };
+    card.hass = { ...hass, states: { ...states } };
+    return Promise.resolve();
+  },
+};
+card.setConfig(await (await fetch("config.json")).json());
+card.hass = hass;
+document.getElementById("host").appendChild(card);
+window.card = card;
+</script></body></html>

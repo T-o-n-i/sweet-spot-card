@@ -11,6 +11,9 @@ blueprint:
     Switching the place from a voice assistant or another automation then works
     without the dashboard.
   domain: automation
+  author: T-o-n-i
+  homeassistant:
+    min_version: "2024.10.0"
   source_url: https://github.com/T-o-n-i/sweet-spot-card/blob/main/blueprints/automation/sweet_spot_card/apply_place.yaml
   input:
     place:

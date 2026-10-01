@@ -6,7 +6,7 @@
  * MIT License
  */
 
-const CARD_VERSION = "1.0.0";
+const CARD_VERSION = "1.0.1";
 
 const DEFAULTS = {
   mode: "listener", // "listener": nearer speakers get quieter; "fader": nearer speakers get louder
@@ -1688,8 +1688,8 @@ if (typeof customElements !== "undefined" && !customElements.get("sweet-spot-car
   window.customCards = window.customCards || [];
   window.customCards.push({
     type: "sweet-spot-card",
-    name: "Sweet Spot Card",
-    description: "Balance several speakers in one room around a draggable listening position.",
+    name: "Sweet Spot – Speaker Balance Card",
+    description: "Balance the volume of several speakers in one room around a draggable listening position.",
     documentationURL: "https://github.com/T-o-n-i/sweet-spot-card",
   });
   console.info(`%c SWEET-SPOT-CARD %c ${CARD_VERSION} `, "background:#ff9800;color:#000", "");

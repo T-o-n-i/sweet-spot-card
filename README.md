@@ -1,6 +1,6 @@
-# Sweet Spot Card
+# Sweet Spot – Speaker Balance Card
 
-A Home Assistant dashboard card for rooms with several speakers. You drag a dot to where you sit, and the card balances the speakers around it: speakers close to you get quieter, the ones further away louder. The average volume stays the same, only the ratio between the speakers changes.
+A Home Assistant dashboard card that balances the volume of several speakers in one room. You drag a dot to where you sit, and the card balances the speakers around it: speakers close to you get quieter, the ones further away louder. The average volume stays the same, only the ratio between the speakers changes.
 
 Works with any `media_player` that supports `volume_set` (Sonos, HEOS, Cast, …).
 

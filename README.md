@@ -57,7 +57,7 @@ The card uses your theme: speakers in the primary colour, places in the success 
 | `room.cutout` | – | For `shape: l`: the missing corner as `corner` (`bottom-left`, `bottom-right`, `top-left`, `top-right`), `width` and `height` |
 | `room.outline` | – | Any other shape as a list of `[x, y]` points. Wins over `shape`; the editor can only show it |
 | `room.image` | – | Background image instead of the outline, e.g. `/local/floorplan.png` |
-| `speakers` | required | At least two, each with `entity`, `x`, `y`, optional `name` and `id` |
+| `speakers` | required | At least two, each with `entity`, `x`, `y`, optional `name`, `id` and `trim` |
 | `mode` | `listener` | `listener`: nearer speakers get quieter. `fader`: nearer speakers get louder, like the fader in a car |
 | `strength` | `0.5` | 0 = no effect, 1 = full compensation for distance. Rooms reflect sound, so full compensation usually overdoes it |
 | `min_distance` | `0.5` | Distances below this count as this value, so standing right next to a speaker does not mute it |
@@ -109,6 +109,14 @@ Each item needs `option` (the `input_select` option it stands for), `x` and `y`.
 ### Alternative: one helper per place and speaker
 
 `weight_entity` writes the balance into `input_number` helpers (range −1 to 1, step 0.1) instead, one per place and speaker, e.g. `input_number.balance_{position}_{speaker}`. `{position}` is replaced by the item `id`, `{speaker}` by the speaker `id`. You then need your own automation that turns these values into volumes. This is how the card started out; for new setups the blueprint is simpler.
+
+## Speakers of different size
+
+Bigger speakers play louder at the same volume setting. Give each speaker a `trim` to even that out, on the same scale as the balance: `-0.3` gives it about 80 % of the volume, `-1` half, `+1` double. In the editor this is the *Level correction* slider.
+
+To find the value, put the dot where you are about equally far from all speakers and lower the louder ones until everything sounds equally loud. A fixed factor is an approximation; it fits normal listening levels best.
+
+When you change `trim`, speaker positions, the room, `mode` or `strength`, the card recalculates the saved balance of every place, keeping the positions you dragged. If several cards share the same memory helper, give them the same configuration, otherwise the card loaded last wins.
 
 ## Overall volume
 

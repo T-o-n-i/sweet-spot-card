@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { computeWeights, computeVolumes, meanVolume, volumesForMean, pickColors, similarColors, roomOutline, outlineToShape, CORNERS, encodeEntry, decodeWeights } from "./sweet-spot-card.js";
+import { computeWeights, computeVolumes, meanVolume, volumesForMean, pickColors, similarColors, roomOutline, outlineToShape, CORNERS, encodeEntry, decodeWeights, computeBalance, syncStorage } from "./sweet-spot-card.js";
 
 const speakers = [
   { id: "arabella", x: 0.58, y: 0.64 },
@@ -96,4 +96,18 @@ assert.equal(decodeWeights([1, 2, 3], spk), null);
 const full = JSON.stringify(Object.fromEntries(["Arabella", "Sofa", "Esstisch", "Küche", "Küchensitzecke"].map((o) => [o, entry])));
 console.log("Speicher     ", full.length, "Zeichen");
 assert.ok(full.length <= 255);
+// Trim: added to the balance of every place.
+const trimmed = speakers.map((sp, i) => ({ ...sp, entity: spk[i].entity, trim: i < 2 ? -0.3 : 0 }));
+const plain = computeWeights({ x: 5.3, y: 3.7 }, trimmed, {});
+const withTrim = computeBalance({ x: 5.3, y: 3.7 }, trimmed, {});
+assert.ok(Math.abs(withTrim[0] - (plain[0] - 0.3)) < 1e-9 && withTrim[2] === plain[2]);
+// Sync: recomputes every place, keeps dragged positions, null when nothing changes.
+const items = [{ option: "Sofa", x: 2, y: 3.6 }, { option: "Tisch", x: 6, y: 3 }];
+const synced = syncStorage({ Sofa: [2.36, 3.49] }, items, trimmed, {});
+assert.deepEqual(synced.Sofa.slice(0, 2), [2.36, 3.49]);
+assert.deepEqual(synced.Tisch.slice(0, 2), [6, 3]);
+assert.equal(synced.Sofa.length, 6);
+assert.equal(syncStorage(synced, items, trimmed, {}), null);
+const retrimmed = syncStorage(synced, items, trimmed.map((sp) => ({ ...sp, trim: 0 })), {});
+assert.notDeepEqual(retrimmed.Sofa, synced.Sofa);
 console.log("ok");

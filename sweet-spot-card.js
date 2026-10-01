@@ -6,7 +6,7 @@
  * MIT License
  */
 
-const CARD_VERSION = "0.5.0";
+const CARD_VERSION = "0.6.0";
 
 const DEFAULTS = {
   mode: "listener", // "listener": nearer speakers get quieter; "fader": nearer speakers get louder
@@ -99,6 +99,18 @@ export function computeWeights(dot, speakers, opts) {
 }
 
 /**
+ * Balance of a place including each speaker's `trim` (level correction for
+ * speakers that play louder or quieter at the same volume, on the same scale:
+ * −1 = half, +1 = double).
+ */
+export function computeBalance(dot, speakers, opts) {
+  return computeWeights(dot, speakers, opts).map((w, i) => {
+    const trim = Number(speakers[i].trim) || 0;
+    return Math.min(2, Math.max(-2, w + trim));
+  });
+}
+
+/**
  * Volumes (0..1) for the given weights that keep the mean of the current
  * volumes. Speakers without a current volume are left out of the mean.
  */
@@ -149,6 +161,23 @@ export function decodeWeights(entry, speakers) {
 }
 
 export const STORAGE_MAX = 255;
+
+/**
+ * Recomputes the balance of every place from its stored (or configured)
+ * position, so changes to speakers, trim, room, mode or strength reach places
+ * that are not active. Returns the new memory object, or null if nothing changed.
+ */
+export function syncStorage(stored, items, speakers, opts) {
+  const next = { ...stored };
+  for (const item of items) {
+    const saved = stored[item.option];
+    const dot = Array.isArray(saved) && saved.length >= 2
+      ? { x: saved[0], y: saved[1] }
+      : { x: item.x, y: item.y };
+    next[item.option] = encodeEntry(dot, computeBalance(dot, speakers, opts), speakers);
+  }
+  return JSON.stringify(next) === JSON.stringify(stored) ? null : next;
+}
 
 /* ------------------------------- room shape ------------------------------- */
 
@@ -263,6 +292,7 @@ class SweetSpotCard extends Base {
     this._config = { ...DEFAULTS, ...config };
     this._built = false;
     this._local = null; // dot position while dragging or until HA confirms
+    this._synced = false; // memory not yet checked against this configuration
     if (this._hass) this._build();
   }
 
@@ -496,6 +526,7 @@ class SweetSpotCard extends Base {
   _update() {
     const c = this._config;
     this._updateColors();
+    this._scheduleSync();
     const missing = [
       ...c.speakers.map((s) => s.entity),
       ...(this._positions ? [this._positions.entity] : []),
@@ -530,7 +561,7 @@ class SweetSpotCard extends Base {
     this._dot.setAttribute("cx", dot.x);
     this._dot.setAttribute("cy", dot.y);
 
-    const weights = computeWeights(dot, c.speakers, c);
+    const weights = computeBalance(dot, c.speakers, c);
     const current = this._currentVolumes();
     const preview = computeVolumes(current, weights);
 
@@ -666,9 +697,28 @@ class SweetSpotCard extends Base {
 
   /* ---------------- writing to HA ---------------- */
 
+  // Once per configuration (and debounced, because the editor preview gets a
+  // new configuration on every keystroke) bring all stored places in line.
+  _scheduleSync() {
+    const pos = this._positions;
+    if (this._synced || !pos?.storage || pos.weight_entity) return;
+    if (!this._hass.states[pos.storage] || this._config.speakers.some((s) => !s.entity)) return;
+    this._synced = true;
+    clearTimeout(this._syncTimer);
+    this._syncTimer = setTimeout(() => {
+      const next = syncStorage(this._stored(), pos.items, this._config.speakers, this._config);
+      if (!next) return;
+      const value = JSON.stringify(next);
+      this._storageFull = value.length > STORAGE_MAX;
+      if (!this._storageFull) {
+        this._hass.callService("input_text", "set_value", { entity_id: pos.storage, value });
+      }
+    }, 800);
+  }
+
   async _apply(dot) {
     const c = this._config;
-    const weights = computeWeights(dot, c.speakers, c);
+    const weights = computeBalance(dot, c.speakers, c);
     const item = this._activeItem();
     const pos = this._positions;
 
@@ -761,6 +811,7 @@ const EDITOR_STRINGS = {
     remove: "Remove",
     entity: "Speaker",
     name: "Label",
+    trim: "Level correction (−1 = half, +1 = double; e.g. lower bigger speakers)",
     positions: "Places (optional)",
     positions_hint: "An input_select with one option per place. Needed if places should be switchable from automations or voice assistants.",
     pos_entity: "Selection (input_select)",
@@ -796,6 +847,7 @@ const EDITOR_STRINGS = {
     remove: "Entfernen",
     entity: "Lautsprecher",
     name: "Beschriftung",
+    trim: "Pegelausgleich (−1 = halb, +1 = doppelt; z. B. größere Lautsprecher absenken)",
     positions: "Plätze (optional)",
     positions_hint: "Ein input_select mit einer Option pro Platz. Nötig, wenn Plätze auch per Automation oder Sprachassistent umschaltbar sein sollen.",
     pos_entity: "Auswahl (input_select)",
@@ -964,7 +1016,7 @@ class SweetSpotCardEditor extends Base {
     return [{ type: "grid", name: "", schema: [
       { name: "entity", selector: { entity: { domain: "media_player" } } },
       { name: "name", selector: { text: {} } },
-    ] }];
+    ] }, { name: "trim", selector: { number: { min: -1, max: 1, step: 0.05, mode: "slider" } } }];
   }
 
   _onSpeaker(i, v) {
@@ -976,6 +1028,9 @@ class SweetSpotCardEditor extends Base {
     s.entity = v.entity || "";
     if (v.name) s.name = v.name;
     else delete s.name;
+    const trim = Math.round((Number(v.trim) || 0) * 100) / 100;
+    if (trim) s.trim = trim;
+    else delete s.trim;
     this._fire();
     this._render();
   }
@@ -1080,7 +1135,7 @@ class SweetSpotCardEditor extends Base {
     };
     setForm(this._general, this._generalSchema(room), this._generalData(room));
     this._speakerForms.forEach((f, i) =>
-      setForm(f, this._speakerSchema(), { entity: speakers[i].entity || "", name: speakers[i].name || "" }));
+      setForm(f, this._speakerSchema(), { entity: speakers[i].entity || "", name: speakers[i].name || "", trim: speakers[i].trim || 0 }));
     setForm(this._posForm, this._positionsSchema(), this._positionsData());
     this._itemForms.forEach((f, k) =>
       setForm(f, [{ name: "name", selector: { text: {} } }], { name: items[k].name || "" },

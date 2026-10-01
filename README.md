@@ -4,6 +4,8 @@ A Home Assistant dashboard card for rooms with several speakers. You drag a dot 
 
 Works with any `media_player` that supports `volume_set` (Sonos, HEOS, Cast, …).
 
+<img src="docs/demo.gif" width="480" alt="Dragging the listening position: speakers turn towards it, change size with their volume, and sound waves travel to the listener">
+
 <p>
   <img src="docs/card-armchair.png" width="380" alt="Listener next to a speaker: that speaker plays quieter, the far ones louder">
   <img src="docs/card-dining-table.png" width="380" alt="Listener in the middle of the room: all speakers play about equally">

@@ -6,7 +6,7 @@
  * MIT License
  */
 
-const CARD_VERSION = "0.8.0";
+const CARD_VERSION = "1.0.0";
 
 const DEFAULTS = {
   mode: "listener", // "listener": nearer speakers get quieter; "fader": nearer speakers get louder
@@ -1488,8 +1488,12 @@ class SweetSpotCardEditor extends Base {
         svg { width: 100%; height: auto; display: block; touch-action: none; user-select: none;
               background: var(--card-background-color); border: 1px solid var(--divider-color); border-radius: 8px; }
         .room { fill: var(--secondary-background-color, rgba(127,127,127,.08)); stroke: var(--divider-color, #999); }
-        .speaker { fill: var(--primary-color, #03a9f4); cursor: move; }
-        .place { fill: var(--card-background-color, #fff); stroke: var(--success-color, #43a047); cursor: move; }
+        .speaker, .place { cursor: move; }
+        .speaker .box { fill: var(--primary-color, #03a9f4); }
+        .speaker .cone { fill: none; stroke: var(--card-background-color, #fff); }
+        .speaker .tweeter { fill: var(--card-background-color, #fff); }
+        .place .ring { fill: var(--card-background-color, #fff); stroke: var(--success-color, #43a047); }
+        .place .seat { fill: none; stroke: var(--success-color, #43a047); stroke-linecap: round; stroke-linejoin: round; }
         .handle { fill: var(--secondary-text-color, #666); cursor: move; }
         .label { fill: var(--primary-text-color, #222); pointer-events: none; }
         .sub { fill: var(--secondary-text-color, #666); pointer-events: none; }
@@ -1587,15 +1591,27 @@ class SweetSpotCardEditor extends Base {
     }));
 
     (this._config.positions?.items || []).forEach((item, k) => {
-      svg.appendChild(svgEl("circle", { class: "place", cx: item.x, cy: item.y, r: u * 2.6, "stroke-width": u * 0.6, "data-kind": "item", "data-index": k }));
+      // Same symbols as on the card, without turning and waves.
+      const place = svgEl("g", { class: "place", transform: `translate(${item.x} ${item.y}) scale(${u})`, "data-kind": "item", "data-index": k });
+      place.append(
+        svgEl("circle", { class: "ring", r: 2.8, "stroke-width": 0.6 }),
+        svgEl("path", { class: "seat", d: "M-1.4 -0.9 v1.2 h2.8 v-1.2 M-1.6 0.3 v1 M1.6 0.3 v1 M-1.4 -0.9 h2.8", "stroke-width": 0.45 }),
+      );
+      svg.appendChild(place);
       const label = svgEl("text", { class: "sub", x: item.x, y: item.y + u * 6, "text-anchor": "middle", "font-size": fs * 0.9 });
       label.textContent = item.name || item.option;
       svg.appendChild(label);
     });
 
     (this._config.speakers || []).forEach((s, i) => {
-      svg.appendChild(svgEl("circle", { class: "speaker", cx: s.x, cy: s.y, r: u * 2.6, "data-kind": "speaker", "data-index": i }));
-      const label = svgEl("text", { class: "label", x: s.x, y: s.y - u * 4, "text-anchor": "middle", "font-size": fs });
+      const speaker = svgEl("g", { class: "speaker", transform: `translate(${s.x} ${s.y}) scale(${u * 1.25})`, "data-kind": "speaker", "data-index": i });
+      speaker.append(
+        svgEl("rect", { class: "box", x: -1.8, y: -2.4, width: 3.6, height: 4.8, rx: 0.8 }),
+        svgEl("circle", { class: "cone", cy: 0.8, r: 1, "stroke-width": 0.35 }),
+        svgEl("circle", { class: "tweeter", cy: -1.25, r: 0.4 }),
+      );
+      svg.appendChild(speaker);
+      const label = svgEl("text", { class: "label", x: s.x, y: s.y - u * 4.5, "text-anchor": "middle", "font-size": fs });
       label.textContent = s.name || this._hass.states[s.entity]?.attributes.friendly_name || s.entity || "?";
       svg.appendChild(label);
     });
@@ -1627,9 +1643,9 @@ class SweetSpotCardEditor extends Base {
   }
 
   _dragStart(e) {
-    const kind = e.target.dataset?.kind;
-    if (!kind) return;
-    this._drag = { kind, index: Number(e.target.dataset.index) };
+    const hit = e.target.closest?.("[data-kind]");
+    if (!hit) return;
+    this._drag = { kind: hit.dataset.kind, index: Number(hit.dataset.index) };
     this._svg.setPointerCapture(e.pointerId);
     e.preventDefault();
   }

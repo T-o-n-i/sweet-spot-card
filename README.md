@@ -13,6 +13,14 @@ Sitting in the armchair next to the top-left speaker (left) and at the dining ta
 
 <img src="docs/editor.webp" width="760" alt="Visual editor with room shape, mode, strength and live preview">
 
+## When it makes sense
+
+The card balances `media_player` entities against each other. That works best with several single speakers spread around one room, each playing on its own.
+
+- **Stereo pairs and home theater sets** (e.g. a soundbar with rear speakers) show up in Home Assistant as *one* media player with one volume. The card treats them as one speaker: place it in the middle between its boxes. You can balance a pair against other speakers or pairs, but not left against right within the pair.
+- **One pair or one set only:** then there is just one point on the plan and nothing to balance, so the card is of no use.
+- The speakers need individual volume control in Home Assistant. Speakers that only follow a shared group volume cannot be balanced.
+
 ## Installation
 
 ### HACS

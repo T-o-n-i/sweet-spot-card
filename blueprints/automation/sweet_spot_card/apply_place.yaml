@@ -10,6 +10,11 @@ blueprint:
     set "Volumes are set by the Sweet Spot automation" in the card editor.
     Switching the place from a voice assistant or another automation then works
     without the dashboard.
+
+
+    Speakers that are not in the playing group are left alone, unless
+    "Group automatically" is on: then they join the playing group whenever the
+    place changes, even if they were playing something else.
   domain: automation
   author: T-o-n-i
   homeassistant:
@@ -38,17 +43,29 @@ blueprint:
           multiple: true
           filter:
             domain: media_player
+    auto_group:
+      name: Group automatically
+      description: >
+        When the place changes, add speakers that are not in the playing group
+        to it, including speakers that play something else. Only works with
+        integrations that support grouping (Sonos, HEOS, Squeezebox, Music
+        Assistant, …).
+      default: false
+      selector:
+        boolean: {}
 
 mode: restart
 max_exceeded: silent
 
 triggers:
   - trigger: state
+    id: place
     entity_id: !input place
     not_to:
       - unavailable
       - unknown
   - trigger: state
+    id: storage
     entity_id: !input storage
     not_to:
       - unavailable
@@ -58,39 +75,91 @@ variables:
   place_entity: !input place
   storage_entity: !input storage
   speaker_input: !input speakers
-  # Entries look like {"Sofa": [x, y, w1, w2, …]}; the weights are tenths,
-  # ordered by speaker entity_id. Without an entry all speakers play equally.
-  targets: >
-    {%- set speakers = ((speaker_input if speaker_input is list else [speaker_input]) | sort) -%}
-    {%- set data = states(storage_entity) | from_json(default={}) -%}
-    {%- set entry = data.get(states(place_entity), []) if data is mapping else [] -%}
-    {%- set ns = namespace(w=[], vols=[], out=[]) -%}
-    {%- for e in speakers -%}
-      {%- set w = (entry[loop.index0 + 2] | float(0)) / 10 if entry | count == speakers | count + 2 else 0 -%}
-      {%- set ns.w = ns.w + [2 ** w] -%}
-      {%- set v = state_attr(e, 'volume_level') -%}
-      {%- if v is number and not is_state(e, 'unavailable') -%}
-        {%- set ns.vols = ns.vols + [v] -%}
+  auto_group: !input auto_group
+  speakers: "{{ ((speaker_input if speaker_input is list else [speaker_input]) | sort) }}"
+  # The playing group with most of the speakers (on a tie the one that started
+  # last) and the speakers outside of it that could join.
+  group_info: >
+    {%- set ns = namespace(lead=none, count=0, started='') -%}
+    {%- for e in speakers if is_state(e, 'playing') -%}
+      {%- set gm = state_attr(e, 'group_members') -%}
+      {%- set coord = gm[0] if gm else e -%}
+      {%- set c = namespace(n=0) -%}
+      {%- for o in speakers if coord in (state_attr(o, 'group_members') or [o]) -%}
+        {%- set c.n = c.n + 1 -%}
+      {%- endfor -%}
+      {%- set started = states[e].last_changed | string -%}
+      {%- if ns.lead is none or c.n > ns.count or (c.n == ns.count and started > ns.started) -%}
+        {%- set ns.lead = coord -%}
+        {%- set ns.count = c.n -%}
+        {%- set ns.started = started -%}
       {%- endif -%}
     {%- endfor -%}
-    {%- if ns.vols | count > 0 -%}
-      {%- set mean = (ns.vols | sum) / (ns.vols | count) -%}
-      {%- set fmean = (ns.w | sum) / (ns.w | count) -%}
+    {%- set m = namespace(l=[]) -%}
+    {%- if ns.lead is not none -%}
       {%- for e in speakers -%}
-        {%- if state_attr(e, 'volume_level') is number and not is_state(e, 'unavailable') -%}
-          {%- set vol = [[(mean * ns.w[loop.index0] / fmean) | round(2), 0] | max, 1] | min -%}
-          {%- set ns.out = ns.out + [{'entity': e, 'volume': vol}] -%}
+        {%- if not is_state(e, 'unavailable')
+              and ((state_attr(e, 'supported_features') | int(0)) | bitwise_and(524288)) > 0
+              and ns.lead not in (state_attr(e, 'group_members') or [e]) -%}
+          {%- set m.l = m.l + [e] -%}
         {%- endif -%}
       {%- endfor -%}
     {%- endif -%}
-    {{ ns.out }}
+    {{ {'lead': ns.lead, 'missing': m.l} }}
+  # Mean volume of the speakers that already play along, taken before any
+  # join, so a joining speaker with a high old volume does not raise it.
+  base_mean: >
+    {%- set v = namespace(l=[]) -%}
+    {%- for e in speakers if e not in group_info.missing and not is_state(e, 'unavailable') -%}
+      {%- if state_attr(e, 'volume_level') is number -%}
+        {%- set v.l = v.l + [state_attr(e, 'volume_level')] -%}
+      {%- endif -%}
+    {%- endfor -%}
+    {{ (v.l | sum / v.l | count) if v.l | count > 0 else none }}
+  join_now: >
+    {{ auto_group and group_info.lead is not none and group_info.missing | count > 0
+       and (trigger.id | default('manual')) != 'storage' }}
 
 conditions:
   - alias: At least one speaker reports a volume
     condition: template
-    value_template: "{{ targets | count > 0 }}"
+    value_template: "{{ base_mean is number }}"
 
 actions:
+  - alias: Join speakers outside the playing group
+    if:
+      - condition: template
+        value_template: "{{ join_now }}"
+    then:
+      - action: media_player.join
+        target:
+          entity_id: "{{ group_info.lead }}"
+        data:
+          group_members: "{{ group_info.missing }}"
+      - wait_template: >
+          {{ group_info.missing | reject('in', state_attr(group_info.lead, 'group_members') or []) | list | count == 0 }}
+        timeout: "00:00:05"
+        continue_on_timeout: true
+  # Entries look like {"Sofa": [x, y, w1, w2, …]}; the weights are tenths,
+  # ordered by speaker entity_id. Without an entry all speakers play equally.
+  - variables:
+      skip: "{{ [] if join_now else group_info.missing }}"
+      targets: >
+        {%- set data = states(storage_entity) | from_json(default={}) -%}
+        {%- set entry = data.get(states(place_entity), []) if data is mapping else [] -%}
+        {%- set ns = namespace(w=[], out=[]) -%}
+        {%- for e in speakers -%}
+          {%- set w = (entry[loop.index0 + 2] | float(0)) / 10 if entry | count == speakers | count + 2 else 0 -%}
+          {%- set ns.w = ns.w + [2 ** w] -%}
+        {%- endfor -%}
+        {%- set fmean = (ns.w | sum) / (ns.w | count) -%}
+        {%- for e in speakers -%}
+          {%- if e not in skip and not is_state(e, 'unavailable') -%}
+            {%- set vol = [[(base_mean * ns.w[loop.index0] / fmean) | round(2), 0] | max, 1] | min -%}
+            {%- set ns.out = ns.out + [{'entity': e, 'volume': vol}] -%}
+          {%- endif -%}
+        {%- endfor -%}
+        {{ ns.out }}
   - alias: Set the volumes
     repeat:
       for_each: "{{ targets }}"

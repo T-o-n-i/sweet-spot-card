@@ -118,6 +118,14 @@ To find the value, put the dot where you are about equally far from all speakers
 
 When you change `trim`, speaker positions, the room, `mode` or `strength`, the card recalculates the saved balance of every place, keeping the positions you dragged. If several cards share the same memory helper, give them the same configuration, otherwise the card loaded last wins.
 
+## Grouped speakers
+
+When something is playing, the card shows speakers that are not in the playing group as a dashed circle marked *not in group*. They are left out of the balance and the overall volume, so they keep whatever they are doing. Tap such a speaker to add it to the group, or use *Group all*. A joining speaker gets its share of the current volume, not its old volume, so nothing suddenly gets loud.
+
+The playing group is the one holding most of the card's speakers; on a tie, the one that started last.
+
+With the blueprint, switch on **Group automatically** to do this whenever the place changes, including speakers that play something else. Grouping needs an integration that supports it (Sonos, HEOS, Squeezebox, Music Assistant, …); for others the card shows nothing.
+
 ## Overall volume
 
 The slider below the room shows the average volume of all speakers. Moving it sets a new average and keeps the balance. With an active place, the balance is taken from the memory (or the helpers), so repeated changes at low volumes do not drift because of rounding.

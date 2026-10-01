@@ -6,7 +6,7 @@
  * MIT License
  */
 
-const CARD_VERSION = "0.6.0";
+const CARD_VERSION = "0.7.0";
 
 const DEFAULTS = {
   mode: "listener", // "listener": nearer speakers get quieter; "fader": nearer speakers get louder
@@ -66,6 +66,8 @@ const STRINGS = {
     drag_hint: "Drag the dot or tap a position",
     drag_hint_free: "Drag the dot",
     missing: "Entity not found",
+    ungrouped: "not in group",
+    group_all: "Group all",
     storage_full: "The memory helper is full (255 characters); the balance of this place was not saved. Use shorter place names or fewer places.",
   },
   de: {
@@ -75,6 +77,8 @@ const STRINGS = {
     drag_hint: "Punkt ziehen oder Platz antippen",
     drag_hint_free: "Punkt ziehen",
     missing: "Entität nicht gefunden",
+    ungrouped: "nicht in Gruppe",
+    group_all: "Alle gruppieren",
     storage_full: "Der Speicher-Helfer ist voll (255 Zeichen), die Balance dieses Platzes wurde nicht gespeichert. Kürzere Platznamen oder weniger Plätze helfen.",
   },
 };
@@ -177,6 +181,45 @@ export function syncStorage(stored, items, speakers, opts) {
     next[item.option] = encodeEntry(dot, computeBalance(dot, speakers, opts), speakers);
   }
   return JSON.stringify(next) === JSON.stringify(stored) ? null : next;
+}
+
+/* -------------------------------- grouping -------------------------------- */
+
+const FEATURE_GROUPING = 524288; // MediaPlayerEntityFeature.GROUPING
+
+function groupOf(entity, st) {
+  const members = st?.attributes?.group_members;
+  return Array.isArray(members) && members.length ? members : [entity];
+}
+
+/**
+ * Finds the group that is playing and which speakers are outside of it.
+ * `speakers` is a list of { entity, st } with st being the HA state object.
+ * The lead group is the playing one holding most of the speakers; on a tie the
+ * one that started last. Returns { lead, missing[] } where lead is the group
+ * coordinator (or null if nothing plays) and missing[i] is true for speakers
+ * that could join but are not in the lead group.
+ */
+export function groupStatus(speakers) {
+  const none = { lead: null, missing: speakers.map(() => false) };
+  let best = null;
+  for (const { entity, st } of speakers) {
+    if (st?.state !== "playing") continue;
+    const coordinator = groupOf(entity, st)[0];
+    const count = speakers.filter((o) => groupOf(o.entity, o.st).includes(coordinator)).length;
+    const started = Date.parse(st.last_changed || 0) || 0;
+    if (!best || count > best.count || (count === best.count && started > best.started)) {
+      best = { coordinator, count, started };
+    }
+  }
+  if (!best) return none;
+  return {
+    lead: best.coordinator,
+    missing: speakers.map(({ entity, st }) =>
+      !!st && st.state !== "unavailable"
+      && ((Number(st.attributes?.supported_features) || 0) & FEATURE_GROUPING) !== 0
+      && !groupOf(entity, st).includes(best.coordinator)),
+  };
 }
 
 /* ------------------------------- room shape ------------------------------- */
@@ -352,7 +395,18 @@ class SweetSpotCard extends Base {
     return this._free || { x: width / 2, y: height / 2 };
   }
 
+  _group() {
+    return groupStatus(this._config.speakers.map((s) => ({ entity: s.entity, st: this._hass.states[s.entity] })));
+  }
+
+  // Volumes of the speakers that play along; speakers outside the playing
+  // group count as unknown, so they neither shift the mean nor get changed.
   _currentVolumes() {
+    const { missing } = this._group();
+    return this._rawVolumes().map((v, i) => (missing[i] ? null : v));
+  }
+
+  _rawVolumes() {
     return this._config.speakers.map((s) => {
       const st = this._hass.states[s.entity];
       if (!st || st.state === "unavailable") return null;
@@ -387,6 +441,7 @@ class SweetSpotCard extends Base {
         .probe { position: absolute; visibility: hidden; }
         .speaker { fill: var(--ssc-speaker); }
         .speaker.off { fill: var(--disabled-text-color, #999); }
+        .speaker.ungrouped { fill: var(--card-background-color, #fff); stroke: var(--ssc-speaker); cursor: pointer; }
         .ray { stroke: var(--ssc-speaker); stroke-opacity: .25; }
         .marker { fill: var(--card-background-color, #fff); stroke: var(--ssc-position); cursor: pointer; }
         .marker.active { fill: var(--ssc-position); fill-opacity: .35; }
@@ -407,7 +462,7 @@ class SweetSpotCard extends Base {
         <span class="probe"></span>
         <div class="warn"></div>
         ${c.master ? `<div class="master"><span class="mlabel"></span><input type="range" min="0" max="100" step="1"><span class="mval"></span></div>` : ""}
-        <div class="footer"><span class="hint"></span><button class="reset" hidden></button></div>
+        <div class="footer"><span class="hint"></span><span><button class="groupall" hidden></button> <button class="reset" hidden></button></span></div>
       </ha-card>`;
 
     const card = this.shadowRoot.querySelector("ha-card");
@@ -455,8 +510,13 @@ class SweetSpotCard extends Base {
       this._markers.push({ item, circle, label });
     }
 
-    this._speakerEls = c.speakers.map((s) => {
-      const circle = svgEl("circle", { class: "speaker", cx: s.x, cy: s.y, r: this._u * 2.4 });
+    this._speakerEls = c.speakers.map((s, i) => {
+      const circle = svgEl("circle", { class: "speaker", cx: s.x, cy: s.y, r: this._u * 2.4, "stroke-width": this._u * 0.7, "stroke-dasharray": `${this._u * 1.2} ${this._u * 0.8}` });
+      circle.addEventListener("pointerdown", (e) => {
+        if (!this._group().missing[i]) return; // otherwise a press starts a drag
+        e.stopPropagation();
+        this._join([i]);
+      });
       const name = svgEl("text", { class: "label", x: s.x, y: s.y - this._u * 4, "text-anchor": "middle", "font-size": fs });
       name.textContent = s.name || this._hass.states[s.entity]?.attributes.friendly_name || s.entity;
       const vol = svgEl("text", { class: "sub", x: s.x, y: s.y + this._u * 6.5, "text-anchor": "middle", "font-size": fs * 0.9 });
@@ -479,6 +539,13 @@ class SweetSpotCard extends Base {
     reset.textContent = this._t("reset");
     reset.addEventListener("click", () => this._resetToMarker());
     this._resetBtn = reset;
+    const groupAll = card.querySelector(".groupall");
+    groupAll.textContent = this._t("group_all");
+    groupAll.addEventListener("click", () => {
+      const { missing } = this._group();
+      this._join(missing.map((m, i) => (m ? i : -1)).filter((i) => i >= 0));
+    });
+    this._groupBtn = groupAll;
     if (c.master) {
       card.querySelector(".mlabel").textContent = this._t("master");
       const slider = card.querySelector(".master input");
@@ -554,6 +621,7 @@ class SweetSpotCard extends Base {
 
     this._hint.textContent = this._t(this._positions ? "drag_hint" : "drag_hint_free");
     this._resetBtn.hidden = !active;
+    this._groupBtn.hidden = !this._group().missing.some(Boolean);
   }
 
   _drawDot(dot) {
@@ -564,6 +632,7 @@ class SweetSpotCard extends Base {
     const weights = computeBalance(dot, c.speakers, c);
     const current = this._currentVolumes();
     const preview = computeVolumes(current, weights);
+    const group = this._group();
 
     // Markers show where each place currently is; the active one follows the dot.
     const active = this._activeItem();
@@ -582,11 +651,14 @@ class SweetSpotCard extends Base {
       ray.setAttribute("x2", s.x);
       ray.setAttribute("y2", s.y);
       const el = this._speakerEls[i];
-      const off = current[i] === null;
+      const ungrouped = group.missing[i];
+      const off = current[i] === null && !ungrouped;
       el.circle.classList.toggle("off", off);
+      el.circle.classList.toggle("ungrouped", ungrouped);
       // Radius grows with the weight so the balance is visible at a glance.
       el.circle.setAttribute("r", this._u * (2.4 + 0.9 * weights[i]));
-      if (off) el.vol.textContent = this._t("unavailable");
+      if (ungrouped) el.vol.textContent = this._t("ungrouped");
+      else if (off) el.vol.textContent = this._t("unavailable");
       else if (this._dragging && preview) el.vol.textContent = `${Math.round(preview[i] * 100)} %`;
       else el.vol.textContent = `${Math.round(current[i] * 100)} %`;
     });
@@ -693,6 +765,32 @@ class SweetSpotCard extends Base {
         volume_level: volumes[i],
       });
     }));
+  }
+
+  /* ---------------- grouping ---------------- */
+
+  /** Joins speakers to the playing group and gives them their share of the volume. */
+  async _join(indices) {
+    const { lead } = this._group();
+    if (!lead || indices.length === 0) return;
+    const c = this._config;
+    // Mean of the speakers that already play, taken before the join, so a
+    // joining speaker with a high old volume does not make everything louder.
+    const mean = meanVolume(this._currentVolumes());
+    const dot = this._local || this._dotFromState();
+    const item = this._activeItem();
+    const weights = (item && decodeWeights(this._stored()[item.option], c.speakers))
+      || computeBalance(dot, c.speakers, c);
+    await this._hass.callService("media_player", "join", {
+      entity_id: lead,
+      group_members: indices.map((i) => c.speakers[i].entity),
+    });
+    if (mean === null) return;
+    const volumes = volumesForMean(mean, weights);
+    await Promise.all(indices.map((i) => this._hass.callService("media_player", "volume_set", {
+      entity_id: c.speakers[i].entity,
+      volume_level: volumes[i],
+    })));
   }
 
   /* ---------------- writing to HA ---------------- */

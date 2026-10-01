@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { computeWeights, computeVolumes, meanVolume, volumesForMean, pickColors, similarColors, roomOutline, outlineToShape, CORNERS, encodeEntry, decodeWeights, computeBalance, syncStorage } from "./sweet-spot-card.js";
+import { computeWeights, computeVolumes, meanVolume, volumesForMean, pickColors, similarColors, roomOutline, outlineToShape, CORNERS, encodeEntry, decodeWeights, computeBalance, syncStorage, groupStatus } from "./sweet-spot-card.js";
 
 const speakers = [
   { id: "arabella", x: 0.58, y: 0.64 },
@@ -110,4 +110,25 @@ assert.equal(synced.Sofa.length, 6);
 assert.equal(syncStorage(synced, items, trimmed, {}), null);
 const retrimmed = syncStorage(synced, items, trimmed.map((sp) => ({ ...sp, trim: 0 })), {});
 assert.notDeepEqual(retrimmed.Sofa, synced.Sofa);
+// Grouping
+const st = (state, members, changed = "2026-10-01T10:00:00Z", features = 524288) =>
+  ({ state, last_changed: changed, attributes: { group_members: members, supported_features: features } });
+const A = "media_player.a", B = "media_player.b", C = "media_player.c", D = "media_player.d";
+// Nothing plays: no lead, nobody missing.
+assert.deepEqual(groupStatus([{ entity: A, st: st("paused", [A]) }, { entity: B, st: st("idle", [B]) }]),
+  { lead: null, missing: [false, false] });
+// A+B play together, C idle alone, D plays something else: C and D are missing.
+const g = groupStatus([
+  { entity: A, st: st("playing", [A, B]) }, { entity: B, st: st("playing", [A, B]) },
+  { entity: C, st: st("idle", [C]) }, { entity: D, st: st("playing", [D], "2026-10-01T11:00:00Z") },
+]);
+assert.equal(g.lead, A);
+assert.deepEqual(g.missing, [false, false, true, true]);
+// Tie: the group that started last wins.
+const tie = groupStatus([{ entity: A, st: st("playing", [A]) }, { entity: B, st: st("playing", [B], "2026-10-01T12:00:00Z") }]);
+assert.equal(tie.lead, B);
+// Speakers without grouping support or unavailable are never "missing".
+const nog = groupStatus([{ entity: A, st: st("playing", [A]) }, { entity: B, st: st("idle", [B], undefined, 0) },
+  { entity: C, st: { state: "unavailable", attributes: {} } }]);
+assert.deepEqual(nog.missing, [false, false, false]);
 console.log("ok");

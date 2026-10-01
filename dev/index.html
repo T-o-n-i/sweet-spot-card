@@ -17,18 +17,16 @@
 import "./fake-ha-form.js";
 import "../sweet-spot-card.js";
 const log = (m) => (document.getElementById("log").textContent = m + "\n" + document.getElementById("log").textContent);
-const mp = (v) => ({ state: "playing", attributes: { volume_level: v } });
+const GROUP = ["media_player.front_left", "media_player.front_right", "media_player.rear_right", "media_player.kitchen"];
+const mp = (v) => ({ state: "playing", last_changed: "2026-01-01T00:00:00Z", attributes: { volume_level: v, supported_features: 524288, group_members: GROUP } });
 const states = {
-  "media_player.wohnzimmer_arabella": mp(0.06),
-  "media_player.wohnzimmer_treppe": mp(0.06),
-  "media_player.kuche_kaffeeecke": mp(0.06),
-  "media_player.kuche_kuchensitzecke": mp(0.06),
-  "input_select.sonos_player": { state: "Sofa", attributes: { options: ["Arabella", "Sofa", "Esstisch", "Küche", "Küchensitzecke"] } },
-  "input_text.sonos_horplatze": { state: "{}", attributes: {} },
+  "media_player.front_left": mp(0.06),
+  "media_player.front_right": mp(0.06),
+  "media_player.rear_right": mp(0.06),
+  "media_player.kitchen": mp(0.06),
+  "input_select.listening_place": { state: "Sofa", attributes: { options: ["Armchair", "Sofa", "Dining table", "Kitchen"] } },
+  "input_text.sweet_spot_memory": { state: "{}", attributes: {} },
 };
-for (const o of ["arabella","sofa","esstisch","kuche","kuchensitzecke"])
-  for (const l of ["arabella","treppe","kaffeeecke","kuchensitzecke"])
-    states[`input_number.sonos_${o}_${l}`] = { state: "0.0", attributes: { step: 0.1 } };
 const card = document.createElement("sweet-spot-card");
 const hass = {
   states, locale: { language: "de" },

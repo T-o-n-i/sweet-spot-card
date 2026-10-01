@@ -2,20 +2,20 @@ import assert from "node:assert/strict";
 import { computeWeights, computeVolumes, meanVolume, volumesForMean, pickColors, similarColors, roomOutline, outlineToShape, CORNERS, encodeEntry, decodeWeights, computeBalance, syncStorage, groupStatus } from "./sweet-spot-card.js";
 
 const speakers = [
-  { id: "arabella", x: 0.58, y: 0.64 },
-  { id: "treppe", x: 7.99, y: 0.71 },
-  { id: "kaffeeecke", x: 8.15, y: 7.49 },
-  { id: "kuchensitzecke", x: 4.56, y: 6.07 },
+  { id: "front_left", x: 0.58, y: 0.64 },
+  { id: "front_right", x: 7.99, y: 0.71 },
+  { id: "rear_right", x: 8.15, y: 7.49 },
+  { id: "kitchen", x: 4.56, y: 6.07 },
 ];
 const fmt = (a) => a.map((v) => v.toFixed(2)).join("  ");
 
 // Centre of the four speakers: roughly equal.
 const centre = computeWeights({ x: 5.3, y: 3.7 }, speakers, {});
-console.log("Mitte        ", fmt(centre));
+console.log("Centre       ", fmt(centre));
 
-// Sitting next to Arabella: Arabella quieter, the others louder.
+// Sitting next to the front left speaker: it gets quieter, the others louder.
 const arab = computeWeights({ x: 1.22, y: 1.24 }, speakers, {});
-console.log("Arabella     ", fmt(arab));
+console.log("Front left   ", fmt(arab));
 assert.ok(arab[0] < 0 && arab[1] > 0 && arab[2] > 0);
 
 // Fader mode is the mirror image.
@@ -32,7 +32,7 @@ assert.ok(extreme.every((w) => w >= -1 && w <= 1));
 // Volumes keep the mean (within rounding).
 const cur = [0.06, 0.06, 0.06, 0.06];
 const vols = computeVolumes(cur, arab);
-console.log("Vol Arabella ", fmt(vols));
+console.log("Volumes      ", fmt(vols));
 const mean = vols.reduce((a, v) => a + v, 0) / vols.length;
 assert.ok(Math.abs(mean - 0.06) <= 0.01);
 
@@ -41,8 +41,8 @@ assert.equal(computeVolumes([null, null], [0, 0]), null);
 assert.deepEqual(computeVolumes([0.2, null], [0, 0]), [0.2, 0.2]);
 
 for (const [name, p] of Object.entries({
-  Sofa: { x: 1.97, y: 3.59 }, Esstisch: { x: 6.29, y: 2.92 },
-  Kuechensitzecke: { x: 4.95, y: 6.79 }, Kueche: { x: 6.39, y: 7.39 },
+  Sofa: { x: 1.97, y: 3.59 }, "Dining table": { x: 6.29, y: 2.92 },
+  "Kitchen bench": { x: 4.95, y: 6.79 }, Kitchen: { x: 6.39, y: 7.39 },
 })) console.log(name.padEnd(13), fmt(computeWeights(p, speakers, {})));
 // Overall volume: new mean, same balance.
 const louder = volumesForMean(0.2, arab);
@@ -68,7 +68,7 @@ assert.match(orange.listener, /info/);
 const mono = pickColors(theme({ "--primary-color": "#4caf50", "--accent-color": "#4caf50", "--success-color": "#4caf50" }));
 assert.equal(new Set(Object.values(mono)).size, 3);
 assert.ok(similarColors("rgb(3, 169, 244)", "rgb(3, 155, 229)"));
-// Room shapes: the hand-written outline from the living room is an L.
+// Room shapes: a hand-written L-shaped outline is recognised.
 const living = [[0, 0], [8.6, 0], [8.6, 7.9], [4.1, 7.9], [4.1, 4.22], [0, 4.22]];
 const parsed = outlineToShape(living, 8.6, 7.9);
 assert.equal(parsed.shape, "l");
@@ -82,19 +82,19 @@ for (const corner of CORNERS) {
 assert.equal(outlineToShape([[0, 0], [5, 0], [3, 3]], 5, 3), null);
 // Storage entries: weights sorted by entity_id, round trip in card order.
 const spk = [
-  { entity: "media_player.wohnzimmer_arabella" },
-  { entity: "media_player.wohnzimmer_treppe" },
-  { entity: "media_player.kuche_kaffeeecke" },
-  { entity: "media_player.kuche_kuchensitzecke" },
+  { entity: "media_player.living_front_left" },
+  { entity: "media_player.living_front_right" },
+  { entity: "media_player.kitchen_rear_right" },
+  { entity: "media_player.kitchen_bench" },
 ];
 const entry = encodeEntry({ x: 1.2, y: 3.4 }, [-1, 0.4, 0.6, 0.3], spk);
-// kuche_kaffeeecke, kuche_kuchensitzecke, wohnzimmer_arabella, wohnzimmer_treppe
-assert.deepEqual(entry, [1.2, 3.4, 6, 3, -10, 4]);
+// kitchen_bench, kitchen_rear_right, living_front_left, living_front_right
+assert.deepEqual(entry, [1.2, 3.4, 3, 6, -10, 4]);
 assert.deepEqual(decodeWeights(entry, spk), [-1, 0.4, 0.6, 0.3]);
 assert.equal(decodeWeights([1.2, 3.4], spk), null);
 assert.equal(decodeWeights([1, 2, 3], spk), null);
-const full = JSON.stringify(Object.fromEntries(["Arabella", "Sofa", "Esstisch", "Küche", "Küchensitzecke"].map((o) => [o, entry])));
-console.log("Speicher     ", full.length, "Zeichen");
+const full = JSON.stringify(Object.fromEntries(["Armchair", "Sofa", "Dining table", "Kitchen", "Kitchen bench"].map((o) => [o, entry])));
+console.log("Memory       ", full.length, "characters");
 assert.ok(full.length <= 255);
 // Trim: added to the balance of every place.
 const trimmed = speakers.map((sp, i) => ({ ...sp, entity: spk[i].entity, trim: i < 2 ? -0.3 : 0 }));
@@ -102,10 +102,10 @@ const plain = computeWeights({ x: 5.3, y: 3.7 }, trimmed, {});
 const withTrim = computeBalance({ x: 5.3, y: 3.7 }, trimmed, {});
 assert.ok(Math.abs(withTrim[0] - (plain[0] - 0.3)) < 1e-9 && withTrim[2] === plain[2]);
 // Sync: recomputes every place, keeps dragged positions, null when nothing changes.
-const items = [{ option: "Sofa", x: 2, y: 3.6 }, { option: "Tisch", x: 6, y: 3 }];
+const items = [{ option: "Sofa", x: 2, y: 3.6 }, { option: "Table", x: 6, y: 3 }];
 const synced = syncStorage({ Sofa: [2.36, 3.49] }, items, trimmed, {});
 assert.deepEqual(synced.Sofa.slice(0, 2), [2.36, 3.49]);
-assert.deepEqual(synced.Tisch.slice(0, 2), [6, 3]);
+assert.deepEqual(synced.Table.slice(0, 2), [6, 3]);
 assert.equal(synced.Sofa.length, 6);
 assert.equal(syncStorage(synced, items, trimmed, {}), null);
 const retrimmed = syncStorage(synced, items, trimmed.map((sp) => ({ ...sp, trim: 0 })), {});

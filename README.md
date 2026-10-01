@@ -13,6 +13,16 @@ Sitting in the armchair next to the top-left speaker (left) and at the dining ta
 
 <img src="docs/editor.webp" width="760" alt="Visual editor with room shape, mode, strength and live preview">
 
+## Quick start
+
+1. Install the card with HACS (see below) and reload the browser.
+2. Edit a dashboard, add the *Sweet Spot Card* and pick your speakers.
+3. Drag the speakers on the floor plan to where they stand, and set the room size and shape.
+4. Under *Quick setup*, enter your listening places (e.g. `Sofa, Dining table, Kitchen`) and press *Set up places*. This creates the two helpers and the automation for you (administrator account needed).
+5. Drag the places to where you sit and save.
+
+Now tap a place on the card, or switch it from voice assistants and automations, and the volumes follow. Prefer to do it by hand? See [Saved places](#saved-places).
+
 ## When it makes sense
 
 The card balances `media_player` entities against each other. That works best with several single speakers spread around one room, each playing on its own.
@@ -87,6 +97,8 @@ If you have fixed places (sofa, dining table, …), the card can remember a bala
 
 ### Setup with the blueprint (recommended)
 
+The *Quick setup* in the card editor does all of this for you. To set it up by hand:
+
 1. Create two helpers under *Settings → Devices & services → Helpers*:
    - a **Dropdown** (`input_select`) with one option per place, e.g. *Sofa*, *Dining table*
    - a **Text** (`input_text`) with maximum length **255**, the card's memory
@@ -146,6 +158,19 @@ With the blueprint, switch on **Group automatically** to do this whenever the pl
 ## Overall volume
 
 The slider below the room shows the average volume of all speakers. Moving it sets a new average and keeps the balance. With an active place, the balance is taken from the memory (or the helpers), so repeated changes at low volumes do not drift because of rounding.
+
+## Using the keyboard
+
+The listening position can be moved with the arrow keys once it has the focus (hold Shift for bigger steps). Places and speakers outside the group react to Enter and Space.
+
+## Troubleshooting
+
+- **"Custom element doesn't exist: sweet-spot-card"** after installing or updating: the browser still uses its old copy. Reload with Ctrl/Cmd + Shift + R; in the companion app, use *Settings → Companion app → Debugging → Reset frontend cache*.
+- **Nothing happens when you switch places:** check that the automation from the blueprint is on and uses the same helpers and speakers as the card.
+- **"The memory helper is full":** the `input_text` must have a maximum length of 255; shorter place names or fewer places help.
+- **A speaker shows "not in group":** it is not part of the playing group. Tap it, or turn on *Group automatically* in the automation.
+
+So far the card has been tested with Sonos speakers. Reports about other systems are welcome in the issues.
 
 ## How the balance is calculated
 

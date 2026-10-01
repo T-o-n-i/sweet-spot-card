@@ -1,5 +1,6 @@
 {
   "name": "Sweet Spot Card",
   "filename": "sweet-spot-card.js",
-  "render_readme": true
+  "render_readme": true,
+  "homeassistant": "2024.10.0"
 }

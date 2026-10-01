@@ -6,7 +6,7 @@
  * MIT License
  */
 
-const CARD_VERSION = "0.7.0";
+const CARD_VERSION = "0.8.0";
 
 const DEFAULTS = {
   mode: "listener", // "listener": nearer speakers get quieter; "fader": nearer speakers get louder
@@ -65,6 +65,8 @@ const STRINGS = {
     unavailable: "unavailable",
     drag_hint: "Drag the dot or tap a position",
     drag_hint_free: "Drag the dot",
+    listener: "Listening position",
+    speaker_join: "Add to group",
     missing: "Entity not found",
     ungrouped: "not in group",
     group_all: "Group all",
@@ -76,6 +78,8 @@ const STRINGS = {
     unavailable: "nicht verfügbar",
     drag_hint: "Punkt ziehen oder Platz antippen",
     drag_hint_free: "Punkt ziehen",
+    listener: "Hörplatz",
+    speaker_join: "Zur Gruppe hinzufügen",
     missing: "Entität nicht gefunden",
     ungrouped: "nicht in Gruppe",
     group_all: "Alle gruppieren",
@@ -439,13 +443,26 @@ class SweetSpotCard extends Base {
         .room { fill: var(--secondary-background-color, rgba(127,127,127,.08)); stroke: var(--divider-color, #999); }
         :host { --ssc-speaker: ${COLOR_ROLES[0][1][0]}; --ssc-position: ${COLOR_ROLES[1][1][0]}; --ssc-listener: ${COLOR_ROLES[2][1][0]}; }
         .probe { position: absolute; visibility: hidden; }
-        .speaker { fill: var(--ssc-speaker); }
-        .speaker.off { fill: var(--disabled-text-color, #999); }
-        .speaker.ungrouped { fill: var(--card-background-color, #fff); stroke: var(--ssc-speaker); cursor: pointer; }
+        .box { fill: var(--ssc-speaker); }
+        .cone { fill: none; stroke: var(--card-background-color, #fff); }
+        .tweeter { fill: var(--card-background-color, #fff); }
+        .speaker.off .box { fill: var(--disabled-text-color, #999); }
+        .speaker.ungrouped { cursor: pointer; }
+        .speaker.ungrouped .box { fill: var(--card-background-color, #fff); stroke: var(--ssc-speaker); }
+        .speaker.ungrouped .cone { stroke: var(--ssc-speaker); }
+        .speaker.ungrouped .tweeter { fill: var(--ssc-speaker); }
         .ray { stroke: var(--ssc-speaker); stroke-opacity: .25; }
-        .marker { fill: var(--card-background-color, #fff); stroke: var(--ssc-position); cursor: pointer; }
-        .marker.active { fill: var(--ssc-position); fill-opacity: .35; }
-        .dot { fill: var(--ssc-listener); stroke: var(--card-background-color, #fff); cursor: grab; }
+        .ray.hidden, .waves:not(.on) { display: none; }
+        .wave { fill: none; stroke: var(--ssc-speaker); stroke-linecap: round; }
+        .marker { cursor: pointer; }
+        .marker .ring { fill: var(--card-background-color, #fff); stroke: var(--ssc-position); }
+        .marker .seat { fill: none; stroke: var(--ssc-position); stroke-linecap: round; stroke-linejoin: round; }
+        .marker.active .ring { fill: var(--ssc-position); fill-opacity: .35; }
+        .dot { cursor: grab; }
+        .dot .disc { fill: var(--ssc-listener); stroke: var(--card-background-color, #fff); }
+        .dot .person { fill: var(--card-background-color, #fff); }
+        svg :focus { outline: none; }
+        svg :focus-visible .ring, svg :focus-visible .disc, svg :focus-visible .box { stroke: var(--primary-text-color, #222); stroke-width: 0.4; }
         .label { fill: var(--primary-text-color, #222); }
         .sub { fill: var(--secondary-text-color, #666); }
         .footer { display: flex; justify-content: space-between; align-items: center; margin-top: 8px;
@@ -488,43 +505,96 @@ class SweetSpotCard extends Base {
     const rays = svgEl("g");
     svg.appendChild(rays);
     this._rays = c.speakers.map(() => {
-      const l = svgEl("line", { class: "ray", "stroke-width": this._u * 0.5 });
+      const l = svgEl("line", { class: "ray", "stroke-width": this._u * 0.5, "stroke-dasharray": `${this._u * 1.2} ${this._u * 1.2}` });
       rays.appendChild(l);
       return l;
+    });
+    // Sound waves: three arcs per speaker that travel towards the listener.
+    const R = this._u * 9;
+    const a = (35 * Math.PI) / 180;
+    const arc = `M ${R * Math.cos(a)} ${-R * Math.sin(a)} A ${R} ${R} 0 0 1 ${R * Math.cos(a)} ${R * Math.sin(a)}`;
+    // SMIL scales around the speaker (the local origin); CSS transforms on SVG
+    // children would scale around the view box instead.
+    const still = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    this._waves = c.speakers.map(() => {
+      const g = svgEl("g", { class: "waves" });
+      [0, 0.8, 1.6].forEach((delay, k) => {
+        const path = svgEl("path", { class: "wave", d: arc });
+        if (still) {
+          path.setAttribute("transform", `scale(${0.6 + 0.4 * k})`);
+          path.setAttribute("opacity", 0.4);
+        } else {
+          path.setAttribute("opacity", 0);
+          path.append(
+            svgEl("animateTransform", { attributeName: "transform", type: "scale", values: "0.3;2.2", dur: "2.4s", begin: `${delay}s`, repeatCount: "indefinite" }),
+            svgEl("animate", { attributeName: "opacity", values: "0.8;0", dur: "2.4s", begin: `${delay}s`, repeatCount: "indefinite" }),
+          );
+        }
+        g.appendChild(path);
+      });
+      rays.appendChild(g);
+      return g;
     });
 
     this._markers = [];
     for (const item of this._positions?.items || []) {
-      const g = svgEl("g");
-      const circle = svgEl("circle", { class: "marker", cx: item.x, cy: item.y, r: this._u * 2.6, "stroke-width": this._u * 0.6 });
-      const label = svgEl("text", { class: "sub", x: item.x, y: item.y + this._u * 6, "text-anchor": "middle", "font-size": fs * 0.9 });
+      const g = svgEl("g", { class: "marker", tabindex: 0, role: "button", "aria-label": item.name || item.option });
+      // Ring with a small seat, drawn in units of this._u.
+      const glyph = svgEl("g");
+      glyph.append(
+        svgEl("circle", { class: "ring", r: 2.8, "stroke-width": 0.6 }),
+        svgEl("path", { class: "seat", d: "M-1.4 -0.9 v1.2 h2.8 v-1.2 M-1.6 0.3 v1 M1.6 0.3 v1 M-1.4 -0.9 h2.8", "stroke-width": 0.45 }),
+      );
+      const label = svgEl("text", { class: "sub", "text-anchor": "middle", "font-size": fs * 0.9 });
       label.textContent = item.name || item.option;
-      g.append(circle, label);
+      g.append(glyph, label);
       g.addEventListener("pointerdown", (e) => {
         // The active marker sits under the dot; let a press there start a drag.
         if (item === this._activeItem()) return;
         e.stopPropagation();
         this._selectPosition(item);
       });
+      g.addEventListener("keydown", (e) => {
+        if (e.key !== "Enter" && e.key !== " ") return;
+        e.preventDefault();
+        this._selectPosition(item);
+      });
       svg.appendChild(g);
-      this._markers.push({ item, circle, label });
+      this._markers.push({ item, g, glyph, label });
     }
 
     this._speakerEls = c.speakers.map((s, i) => {
-      const circle = svgEl("circle", { class: "speaker", cx: s.x, cy: s.y, r: this._u * 2.4, "stroke-width": this._u * 0.7, "stroke-dasharray": `${this._u * 1.2} ${this._u * 0.8}` });
-      circle.addEventListener("pointerdown", (e) => {
+      // A speaker box whose front (woofer side) turns towards the listener.
+      const g = svgEl("g", { class: "speaker" });
+      g.append(
+        svgEl("rect", { class: "box", x: -1.8, y: -2.4, width: 3.6, height: 4.8, rx: 0.8, "stroke-width": 0.35, "stroke-dasharray": "0.7 0.45" }),
+        svgEl("circle", { class: "cone", cy: 0.8, r: 1, "stroke-width": 0.35 }),
+        svgEl("circle", { class: "tweeter", cy: -1.25, r: 0.4 }),
+      );
+      const join = (e) => {
         if (!this._group().missing[i]) return; // otherwise a press starts a drag
         e.stopPropagation();
+        e.preventDefault();
         this._join([i]);
+      };
+      g.addEventListener("pointerdown", join);
+      g.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") join(e);
       });
-      const name = svgEl("text", { class: "label", x: s.x, y: s.y - this._u * 4, "text-anchor": "middle", "font-size": fs });
+      const name = svgEl("text", { class: "label", x: s.x, y: s.y - this._u * 4.5, "text-anchor": "middle", "font-size": fs });
       name.textContent = s.name || this._hass.states[s.entity]?.attributes.friendly_name || s.entity;
-      const vol = svgEl("text", { class: "sub", x: s.x, y: s.y + this._u * 6.5, "text-anchor": "middle", "font-size": fs * 0.9 });
-      svg.append(circle, name, vol);
-      return { circle, vol };
+      const vol = svgEl("text", { class: "sub", x: s.x, y: s.y + this._u * 7, "text-anchor": "middle", "font-size": fs * 0.9 });
+      svg.append(g, name, vol);
+      return { g, vol, name: name.textContent };
     });
 
-    this._dot = svgEl("circle", { class: "dot", r: this._u * 3.2, "stroke-width": this._u * 0.8 });
+    this._dot = svgEl("g", { class: "dot", tabindex: 0, role: "slider", "aria-label": this._t("listener") });
+    this._dot.append(
+      svgEl("circle", { class: "disc", r: 3.3, "stroke-width": 0.7 }),
+      svgEl("circle", { class: "person", cy: -0.9, r: 0.95 }),
+      svgEl("path", { class: "person", d: "M-1.8 1.9 a1.8 1.5 0 0 1 3.6 0 z" }),
+    );
+    this._dot.addEventListener("keydown", (e) => this._keyMove(e));
     svg.appendChild(this._dot);
 
     svg.addEventListener("pointerdown", (e) => this._dragStart(e));
@@ -605,7 +675,6 @@ class SweetSpotCard extends Base {
     ].filter(Boolean).join(" ");
 
     const active = this._activeItem();
-    for (const m of this._markers) m.circle.classList.toggle("active", m.item === active);
 
     if (this._local && !this._dragging && Date.now() > this._localUntil) this._local = null;
     const dot = this._local || this._dotFromState();
@@ -626,8 +695,8 @@ class SweetSpotCard extends Base {
 
   _drawDot(dot) {
     const c = this._config;
-    this._dot.setAttribute("cx", dot.x);
-    this._dot.setAttribute("cy", dot.y);
+    const u = this._u;
+    this._dot.setAttribute("transform", `translate(${dot.x} ${dot.y}) scale(${u * 1.15})`);
 
     const weights = computeBalance(dot, c.speakers, c);
     const current = this._currentVolumes();
@@ -638,10 +707,10 @@ class SweetSpotCard extends Base {
     const active = this._activeItem();
     for (const m of this._markers) {
       const p = m.item === active ? dot : this._itemPos(m.item);
-      m.circle.setAttribute("cx", p.x);
-      m.circle.setAttribute("cy", p.y);
+      m.glyph.setAttribute("transform", `translate(${p.x} ${p.y}) scale(${u})`);
+      m.g.classList.toggle("active", m.item === active);
       m.label.setAttribute("x", p.x);
-      m.label.setAttribute("y", p.y + this._u * 6);
+      m.label.setAttribute("y", p.y + u * 6.5);
     }
 
     c.speakers.forEach((s, i) => {
@@ -653,10 +722,29 @@ class SweetSpotCard extends Base {
       const el = this._speakerEls[i];
       const ungrouped = group.missing[i];
       const off = current[i] === null && !ungrouped;
-      el.circle.classList.toggle("off", off);
-      el.circle.classList.toggle("ungrouped", ungrouped);
-      // Radius grows with the weight so the balance is visible at a glance.
-      el.circle.setAttribute("r", this._u * (2.4 + 0.9 * weights[i]));
+      el.g.classList.toggle("off", off);
+      el.g.classList.toggle("ungrouped", ungrouped);
+      if (ungrouped) {
+        el.g.setAttribute("tabindex", 0);
+        el.g.setAttribute("role", "button");
+        el.g.setAttribute("aria-label", `${el.name}: ${this._t("speaker_join")}`);
+      } else {
+        el.g.removeAttribute("tabindex");
+        el.g.removeAttribute("role");
+        el.g.removeAttribute("aria-label");
+      }
+      // The box turns towards the listener and grows with its share of the
+      // volume, so the balance is visible at a glance.
+      const angle = (Math.atan2(dot.y - s.y, dot.x - s.x) * 180) / Math.PI;
+      const size = Math.min(1.7, Math.max(0.55, 1 + 0.35 * weights[i]));
+      el.g.setAttribute("transform", `translate(${s.x} ${s.y}) rotate(${angle - 90}) scale(${u * 1.25 * size})`);
+      el.g.querySelector(".box").setAttribute("stroke-dasharray", ungrouped ? "0.7 0.45" : "none");
+      // Waves only while this speaker plays along; a dashed line otherwise.
+      const playing = !ungrouped && !off && this._hass.states[s.entity]?.state === "playing";
+      this._waves[i].classList.toggle("on", playing);
+      this._waves[i].setAttribute("transform", `translate(${s.x} ${s.y}) rotate(${angle})`);
+      this._waves[i].setAttribute("stroke-width", u * Math.min(2.6, 0.6 + 0.7 * Math.pow(2, weights[i])));
+      this._rays[i].classList.toggle("hidden", playing);
       if (ungrouped) el.vol.textContent = this._t("ungrouped");
       else if (off) el.vol.textContent = this._t("unavailable");
       else if (this._dragging && preview) el.vol.textContent = `${Math.round(preview[i] * 100)} %`;
@@ -676,6 +764,27 @@ class SweetSpotCard extends Base {
       x: Math.round(Math.min(W, Math.max(0, p.x)) * 100) / 100,
       y: Math.round(Math.min(H, Math.max(0, p.y)) * 100) / 100,
     };
+  }
+
+  _keyMove(e) {
+    const dirs = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+    const d = dirs[e.key];
+    if (!d) return;
+    e.preventDefault();
+    const { width: W, height: H } = this._config.room;
+    const step = (Math.max(W, H) / 50) * (e.shiftKey ? 5 : 1);
+    const from = this._local || this._dotFromState();
+    this._local = {
+      x: Math.round(Math.min(W, Math.max(0, from.x + d[0] * step)) * 100) / 100,
+      y: Math.round(Math.min(H, Math.max(0, from.y + d[1] * step)) * 100) / 100,
+    };
+    this._localUntil = Date.now() + 3000;
+    this._drawDot(this._local);
+    clearTimeout(this._keyTimer);
+    this._keyTimer = setTimeout(() => {
+      this._localUntil = Date.now() + 3000;
+      this._apply(this._local);
+    }, 600);
   }
 
   _dragStart(e) {
@@ -918,6 +1027,20 @@ const EDITOR_STRINGS = {
     apply_automation: "Volumes are set by the Sweet Spot automation (blueprint)",
     sync: "Take places from selection",
     min_two: "At least two speakers are needed.",
+    setup_title: "Quick setup",
+    setup_hint: "Creates the place selection, the memory helper and the automation for you. Enter your places, separated by commas.",
+    setup_placeholder: "Sofa, Dining table, Kitchen",
+    setup_group: "Group automatically when the place changes",
+    setup_run: "Set up places",
+    setup_busy: "Setting up…",
+    setup_done: "Done. Drag the places on the floor plan into position and save.",
+    setup_need_places: "Enter at least one place.",
+    setup_need_speakers: "Choose at least two speakers first.",
+    setup_admin: "Quick setup needs an administrator account.",
+    setup_failed: "Setup stopped:",
+    helper_place: "Sweet Spot place",
+    helper_memory: "Sweet Spot memory",
+    automation_alias: "Sweet Spot – apply place",
     custom_note: "The room uses a custom outline from YAML. Choose a shape to replace it.",
   },
   de: {
@@ -954,9 +1077,26 @@ const EDITOR_STRINGS = {
     apply_automation: "Lautstärken setzt die Sweet-Spot-Automation (Blueprint)",
     sync: "Plätze aus Auswahl übernehmen",
     min_two: "Es werden mindestens zwei Lautsprecher gebraucht.",
+    setup_title: "Schnelleinrichtung",
+    setup_hint: "Legt die Platzauswahl, den Speicher-Helfer und die Automation für dich an. Gib deine Plätze ein, durch Kommas getrennt.",
+    setup_placeholder: "Sofa, Esstisch, Küche",
+    setup_group: "Beim Platzwechsel automatisch gruppieren",
+    setup_run: "Plätze einrichten",
+    setup_busy: "Wird eingerichtet…",
+    setup_done: "Fertig. Zieh die Plätze im Grundriss an ihre Stelle und speichere.",
+    setup_need_places: "Gib mindestens einen Platz ein.",
+    setup_need_speakers: "Wähle zuerst mindestens zwei Lautsprecher.",
+    setup_admin: "Die Schnelleinrichtung braucht ein Administrator-Konto.",
+    setup_failed: "Einrichtung abgebrochen:",
+    helper_place: "Sweet Spot Hörplatz",
+    helper_memory: "Sweet Spot Speicher",
+    automation_alias: "Sweet Spot – Platz anwenden",
     custom_note: "Der Raum hat eine eigene Form aus YAML. Wähle eine Form, um sie zu ersetzen.",
   },
 };
+
+const BLUEPRINT_URL =
+  "https://github.com/T-o-n-i/sweet-spot-card/blob/main/blueprints/automation/sweet_spot_card/apply_place.yaml";
 
 const SNAP = 0.05;
 const snap = (v) => Math.round(v / SNAP) * SNAP;
@@ -1187,6 +1327,81 @@ class SweetSpotCardEditor extends Base {
     this._render();
   }
 
+  /**
+   * Creates the place selection, the memory helper and an automation from the
+   * blueprint, then points the card at them. Needs an administrator.
+   */
+  async _runSetup() {
+    const root = this.shadowRoot;
+    const msg = root.querySelector(".setup .msg");
+    const names = [...new Set(root.querySelector(".setup-places").value
+      .split(/[,\n]/).map((n) => n.trim()).filter(Boolean))];
+    const speakers = (this._config.speakers || []).map((s) => s.entity).filter(Boolean);
+    if (names.length === 0) return void (msg.textContent = this._t("setup_need_places"));
+    if (speakers.length < 2) return void (msg.textContent = this._t("setup_need_speakers"));
+    const button = root.querySelector(".setup-run");
+    button.disabled = true;
+    msg.textContent = this._t("setup_busy");
+    try {
+      const hass = this._hass;
+      const select = await hass.callWS({
+        type: "input_select/create", name: this._t("helper_place"), options: names, icon: "mdi:sofa",
+      });
+      const memory = await hass.callWS({
+        type: "input_text/create", name: this._t("helper_memory"), min: 0, max: 255, mode: "text", icon: "mdi:map-marker-multiple",
+      });
+      const placeEntity = `input_select.${select.id}`;
+      const storageEntity = `input_text.${memory.id}`;
+
+      // Reuse the blueprint if it is installed already, otherwise import it.
+      const blueprints = await hass.callWS({ type: "blueprint/list", domain: "automation" });
+      let path = Object.keys(blueprints).find((p) => blueprints[p]?.metadata?.source_url === BLUEPRINT_URL);
+      if (!path) {
+        const imported = await hass.callWS({ type: "blueprint/import", url: BLUEPRINT_URL });
+        path = imported.suggested_filename.endsWith(".yaml")
+          ? imported.suggested_filename : `${imported.suggested_filename}.yaml`;
+        await hass.callWS({
+          type: "blueprint/save", domain: "automation", path, yaml: imported.raw_data, source_url: BLUEPRINT_URL,
+        });
+      }
+
+      const id = String(Date.now());
+      await hass.callApi("POST", `config/automation/config/${id}`, {
+        id,
+        alias: this._t("automation_alias"),
+        description: "",
+        use_blueprint: {
+          path,
+          input: {
+            place: placeEntity,
+            storage: storageEntity,
+            speakers,
+            auto_group: root.querySelector(".setup-group").checked,
+          },
+        },
+      });
+
+      const { W, H } = this._room();
+      this._config.positions = {
+        entity: placeEntity,
+        storage: storageEntity,
+        apply: "automation",
+        items: names.map((option, k) => ({
+          option,
+          x: round2(snap((W * (k + 1)) / (names.length + 1))),
+          y: round2(snap(H / 2)),
+        })),
+      };
+      msg.textContent = this._t("setup_done");
+      this._fire();
+      this._render();
+    } catch (err) {
+      msg.textContent = `${this._t("setup_failed")} ${err?.message || err}`;
+    } finally {
+      button.disabled = false;
+    }
+  }
+
   /** Adds a place for every option of the input_select and drops the rest. */
   _syncItems(fire = true) {
     const p = this._config.positions;
@@ -1242,6 +1457,12 @@ class SweetSpotCardEditor extends Base {
     this._minTwo.hidden = speakers.length >= 2;
     this._customNote.hidden = room.shape !== "custom";
     this._syncBtn.hidden = !this._config.positions;
+    // Quick setup is offered until places are configured.
+    this._setup.hidden = !!this._config.positions?.entity;
+    if (!this._hass.user?.is_admin) {
+      this._setup.querySelector(".setup-run").disabled = true;
+      this._setup.querySelector(".msg").textContent = this._t("setup_admin");
+    }
     this._drawPlan();
   }
 
@@ -1258,6 +1479,12 @@ class SweetSpotCardEditor extends Base {
         button { font: inherit; color: var(--primary-color); background: none; border: 1px solid var(--divider-color);
                  border-radius: 8px; padding: 6px 12px; cursor: pointer; }
         button.remove { margin-top: 8px; color: var(--error-color, #db4437); }
+        .setup { border: 1px solid var(--divider-color); border-radius: 8px; padding: 12px; margin: 8px 0 12px; }
+        .setup h4 { margin: 0 0 4px; font-weight: 500; }
+        .setup input[type=text] { width: 100%; box-sizing: border-box; font: inherit; padding: 8px; margin: 4px 0 8px;
+          border: 1px solid var(--divider-color); border-radius: 6px; background: var(--card-background-color); color: var(--primary-text-color); }
+        .setup label { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+        .setup .msg { margin: 8px 0 0; font-size: .9em; color: var(--secondary-text-color); }
         svg { width: 100%; height: auto; display: block; touch-action: none; user-select: none;
               background: var(--card-background-color); border: 1px solid var(--divider-color); border-radius: 8px; }
         .room { fill: var(--secondary-background-color, rgba(127,127,127,.08)); stroke: var(--divider-color, #999); }
@@ -1278,6 +1505,14 @@ class SweetSpotCardEditor extends Base {
       <button class="add">${this._t("add_speaker")}</button>
       <h3>${this._t("positions")}</h3>
       <p class="hint">${this._t("positions_hint")}</p>
+      <div class="setup">
+        <h4>${this._t("setup_title")}</h4>
+        <p class="hint">${this._t("setup_hint")}</p>
+        <input type="text" class="setup-places" placeholder="${this._t("setup_placeholder")}">
+        <label><input type="checkbox" class="setup-group"> ${this._t("setup_group")}</label>
+        <button class="setup-run">${this._t("setup_run")}</button>
+        <p class="msg"></p>
+      </div>
       <ha-form class="positions"></ha-form>
       <div class="items"></div>
       <button class="sync">${this._t("sync")}</button>`;
@@ -1314,6 +1549,8 @@ class SweetSpotCardEditor extends Base {
       itemList.appendChild(form);
       return form;
     });
+    this._setup = root.querySelector(".setup");
+    root.querySelector(".setup-run").addEventListener("click", () => this._runSetup());
     this._syncBtn = root.querySelector(".sync");
     this._syncBtn.addEventListener("click", () => this._syncItems());
 

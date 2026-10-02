@@ -182,6 +182,14 @@ For each speaker the card takes the distance *d* to the dot and the geometric me
 
 `dev/index.html` renders the card against a mocked Home Assistant. Serve the repository root (e.g. `python3 -m http.server`) and open `/dev/index.html`. `node test.mjs` checks the calculation.
 
+## Support
+
+The card is a hobby project, made in my spare time. If it makes your room sound better and you'd like to say thanks, you can buy me a coffee:
+
+[![Support me on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/F1F6HKJ5E)
+
+Bug reports, ideas and reports about other speaker systems in the [issues](https://github.com/T-o-n-i/sweet-spot-card/issues) help just as much.
+
 ## License
 
 MIT

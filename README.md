@@ -1,6 +1,6 @@
 # Sweet Spot – Speaker Balance Card
 
-A Home Assistant dashboard card that balances the volume of several speakers in one room. You drag a dot to where you sit, and the card adjusts the speakers around it: speakers close to you get quieter, the ones further away louder. The average volume stays the same, only the ratio between the speakers changes.
+A Home Assistant dashboard card that balances the volume of several speakers in one room. You tap the place where you sit (or drag a dot there), and the card adjusts the speakers around it: speakers close to you get quieter, the ones further away louder. The average volume stays the same, only the ratio between the speakers changes.
 
 Works with any `media_player` that supports `volume_set` (Sonos, HEOS, Cast, …).
 
@@ -47,11 +47,11 @@ Copy `sweet-spot-card.js` to `/config/www/` and add it as a dashboard resource: 
 
 ## Visual editor
 
-Add the card from the dashboard editor and set it up there: room size and shape (rectangle or L-shape), mode, strength, speakers and places. The floor plan in the editor lets you drag speakers, places and the corner of the L-shape into position. When you choose an `input_select` for the places, the editor creates one place per option.
+Add the card from the dashboard editor and set it up there: room size and shape (rectangle or L-shape), mode, strength, speakers and places. The floor plan in the editor lets you drag speakers, places and the corner of the L-shape into position. Places can only be moved there; on the card a tap selects a place, so moving a finger on a phone never shifts one by accident. A place moved in the editor is saved right away. When you choose an `input_select` for the places, the editor creates one place per option.
 
 ## Minimal configuration
 
-Without any helpers the card sets the speaker volumes directly while you drag.
+Without places the card sets the speaker volumes directly while you drag the dot.
 
 ```yaml
 type: custom:sweet-spot-card
@@ -111,7 +111,7 @@ The *Quick setup* in the card editor does all of this for you. To set it up by h
 
    or import `https://github.com/T-o-n-i/sweet-spot-card/blob/main/blueprints/automation/sweet_spot_card/apply_place.yaml` under *Settings → Automations → Blueprints*.
 
-Now tap a place on the card, or select it from anywhere else (`input_select.select_option`), and the automation sets the volumes. When you drag the dot, the card saves the new balance and the automation applies it.
+Now tap a place on the card, or select it from anywhere else (`input_select.select_option`), and the automation sets the volumes. A tap selects the nearest place, it does not have to hit the symbol. To move a place, drag it on the floor plan in the card editor; the card saves the new balance and the automation applies it.
 
 The memory holds the position and the balance of every place. 255 characters are enough for about five places with four speakers, fewer with long place names. The card warns when it is full.
 
@@ -134,8 +134,8 @@ positions:
 
 Each item needs `option` (the `input_select` option it stands for), `x` and `y`. `name` changes the label on the card without touching the option.
 
-- **`storage`**: the `input_text` where the card keeps the position and balance of each place. The marker of the active place moves with the dot, and *Reset position* puts it back to the `x`/`y` from the configuration.
-- **`apply: automation`**: the card only saves, the blueprint automation sets the volumes. Without it, the card sets the volumes itself when you release the dot, which only works while the dashboard is open.
+- **`storage`**: the `input_text` where the card keeps the position and balance of each place. The editor shows and saves the positions from here, so every card using the same memory sees the same places.
+- **`apply: automation`**: the card only saves, the blueprint automation sets the volumes. Without it, the card sets the volumes itself when you tap a place, which only works while the dashboard is open.
 
 ### Alternative: one helper per place and speaker
 
@@ -145,9 +145,9 @@ Each item needs `option` (the `input_select` option it stands for), `x` and `y`.
 
 Bigger speakers play louder at the same volume setting. Give each speaker a `trim` to even that out, on the same scale as the balance: `-0.3` gives it about 80 % of the volume, `-1` half, `+1` double. In the editor this is the *Level correction* slider.
 
-To find the value, put the dot where you are about equally far from all speakers and lower the louder ones until everything sounds equally loud. A fixed factor is an approximation; it fits normal listening levels best.
+To find the value, move a place in the editor to where you are about equally far from all speakers, select it, and lower the louder ones until everything sounds equally loud. A fixed factor is an approximation; it fits normal listening levels best.
 
-When you change `trim`, speaker positions, the room, `mode` or `strength`, the card recalculates the saved balance of every place, keeping the positions you dragged. If several cards share the same memory helper, give them the same configuration, otherwise the card loaded last wins.
+When you change `trim`, speaker positions, the room, `mode` or `strength`, the card recalculates the saved balance of every place, keeping the positions of the places. If several cards share the same memory helper, give them the same configuration, otherwise the card loaded last wins.
 
 ## Grouped speakers
 
@@ -163,7 +163,7 @@ The slider below the room shows the average volume of all speakers. Moving it se
 
 ## Using the keyboard
 
-The listening position can be moved with the arrow keys once it has the focus (hold Shift for bigger steps). Places and speakers outside the group react to Enter and Space.
+Without places, the listening position can be moved with the arrow keys once it has the focus (hold Shift for bigger steps). Places and speakers outside the group react to Enter and Space.
 
 ## Troubleshooting
 

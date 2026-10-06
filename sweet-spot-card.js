@@ -6,7 +6,7 @@
  * MIT License
  */
 
-const CARD_VERSION = "1.0.1";
+const CARD_VERSION = "1.1.0";
 
 const DEFAULTS = {
   mode: "listener", // "listener": nearer speakers get quieter; "fader": nearer speakers get louder
@@ -60,11 +60,10 @@ export function pickColors(resolve) {
 
 const STRINGS = {
   en: {
-    reset: "Reset position",
     master: "Total",
     unavailable: "unavailable",
-    drag_hint: "Drag the dot or tap a position",
-    drag_hint_free: "Drag the dot",
+    tap_hint: "Tap a place · move places in the card editor",
+    drag_hint: "Drag the dot",
     listener: "Listening position",
     speaker_join: "Add to group",
     missing: "Entity not found",
@@ -73,11 +72,10 @@ const STRINGS = {
     storage_full: "The memory helper is full (255 characters); the balance of this place was not saved. Use shorter place names or fewer places.",
   },
   de: {
-    reset: "Position zurücksetzen",
     master: "Gesamt",
     unavailable: "nicht verfügbar",
-    drag_hint: "Punkt ziehen oder Platz antippen",
-    drag_hint_free: "Punkt ziehen",
+    tap_hint: "Platz antippen · verschieben im Karten-Editor",
+    drag_hint: "Punkt ziehen",
     listener: "Hörplatz",
     speaker_join: "Zur Gruppe hinzufügen",
     missing: "Entität nicht gefunden",
@@ -185,6 +183,11 @@ export function syncStorage(stored, items, speakers, opts) {
     next[item.option] = encodeEntry(dot, computeBalance(dot, speakers, opts), speakers);
   }
   return JSON.stringify(next) === JSON.stringify(stored) ? null : next;
+}
+
+/** Balance helper of a place and speaker, from `positions.weight_entity`. */
+export function weightEntity(pattern, item, speaker) {
+  return pattern.replace("{position}", item.id).replace("{speaker}", speaker.id);
 }
 
 /* -------------------------------- grouping -------------------------------- */
@@ -419,12 +422,6 @@ class SweetSpotCard extends Base {
     });
   }
 
-  _weightEntity(item, speaker) {
-    return this._positions.weight_entity
-      .replace("{position}", item.id)
-      .replace("{speaker}", speaker.id);
-  }
-
   /* ---------------- DOM ---------------- */
 
   _build() {
@@ -440,6 +437,7 @@ class SweetSpotCard extends Base {
         ha-card { padding: 12px 16px 16px; }
         .title { font-size: 1.2em; font-weight: 500; margin: 4px 0 8px; }
         svg { width: 100%; height: auto; display: block; touch-action: none; user-select: none; }
+        svg.places { touch-action: manipulation; }
         .room { fill: var(--secondary-background-color, rgba(127,127,127,.08)); stroke: var(--divider-color, #999); }
         :host { --ssc-speaker: ${COLOR_ROLES[0][1][0]}; --ssc-position: ${COLOR_ROLES[1][1][0]}; --ssc-listener: ${COLOR_ROLES[2][1][0]}; }
         .probe { position: absolute; visibility: hidden; }
@@ -459,6 +457,7 @@ class SweetSpotCard extends Base {
         .marker .seat { fill: none; stroke: var(--ssc-position); stroke-linecap: round; stroke-linejoin: round; }
         .marker.active .ring { fill: var(--ssc-position); fill-opacity: .35; }
         .dot { cursor: grab; }
+        svg.places .dot { cursor: pointer; }
         .dot .disc { fill: var(--ssc-listener); stroke: var(--card-background-color, #fff); }
         .dot .person { fill: var(--card-background-color, #fff); }
         svg :focus { outline: none; }
@@ -479,7 +478,7 @@ class SweetSpotCard extends Base {
         <span class="probe"></span>
         <div class="warn"></div>
         ${c.master ? `<div class="master"><span class="mlabel"></span><input type="range" min="0" max="100" step="1"><span class="mval"></span></div>` : ""}
-        <div class="footer"><span class="hint"></span><span><button class="groupall" hidden></button> <button class="reset" hidden></button></span></div>
+        <div class="footer"><span class="hint"></span><button class="groupall" hidden></button></div>
       </ha-card>`;
 
     const card = this.shadowRoot.querySelector("ha-card");
@@ -548,12 +547,6 @@ class SweetSpotCard extends Base {
       const label = svgEl("text", { class: "sub", "text-anchor": "middle", "font-size": fs * 0.9 });
       label.textContent = item.name || item.option;
       g.append(glyph, label);
-      g.addEventListener("pointerdown", (e) => {
-        // The active marker sits under the dot; let a press there start a drag.
-        if (item === this._activeItem()) return;
-        e.stopPropagation();
-        this._selectPosition(item);
-      });
       g.addEventListener("keydown", (e) => {
         if (e.key !== "Enter" && e.key !== " ") return;
         e.preventDefault();
@@ -572,12 +565,12 @@ class SweetSpotCard extends Base {
         svgEl("circle", { class: "tweeter", cy: -1.25, r: 0.4 }),
       );
       const join = (e) => {
-        if (!this._group().missing[i]) return; // otherwise a press starts a drag
+        if (!this._group().missing[i]) return; // otherwise a tap selects the nearest place
         e.stopPropagation();
         e.preventDefault();
         this._join([i]);
       };
-      g.addEventListener("pointerdown", join);
+      g.addEventListener("click", join);
       g.addEventListener("keydown", (e) => {
         if (e.key === "Enter" || e.key === " ") join(e);
       });
@@ -588,7 +581,11 @@ class SweetSpotCard extends Base {
       return { g, vol, name: name.textContent };
     });
 
-    this._dot = svgEl("g", { class: "dot", tabindex: 0, role: "slider", "aria-label": this._t("listener") });
+    // With places the dot only shows the active place; places are moved in the
+    // card editor, so a tap on the phone can never shift a place by accident.
+    this._dot = this._positions
+      ? svgEl("g", { class: "dot", "aria-hidden": "true" })
+      : svgEl("g", { class: "dot", tabindex: 0, role: "slider", "aria-label": this._t("listener") });
     this._dot.append(
       svgEl("circle", { class: "disc", r: 3.3, "stroke-width": 0.7 }),
       svgEl("circle", { class: "person", cy: -0.9, r: 0.95 }),
@@ -597,18 +594,18 @@ class SweetSpotCard extends Base {
     this._dot.addEventListener("keydown", (e) => this._keyMove(e));
     svg.appendChild(this._dot);
 
-    svg.addEventListener("pointerdown", (e) => this._dragStart(e));
-    svg.addEventListener("pointermove", (e) => this._dragMove(e));
-    svg.addEventListener("pointerup", (e) => this._dragEnd(e));
-    svg.addEventListener("pointercancel", (e) => this._dragEnd(e));
+    if (this._positions) {
+      svg.classList.add("places");
+      svg.addEventListener("click", (e) => this._tap(e));
+    } else {
+      svg.addEventListener("pointerdown", (e) => this._dragStart(e));
+      svg.addEventListener("pointermove", (e) => this._dragMove(e));
+      svg.addEventListener("pointerup", (e) => this._dragEnd(e));
+      svg.addEventListener("pointercancel", (e) => this._dragEnd(e));
+    }
 
     card.insertBefore(svg, card.querySelector(".warn"));
     this._svg = svg;
-
-    const reset = card.querySelector(".reset");
-    reset.textContent = this._t("reset");
-    reset.addEventListener("click", () => this._resetToMarker());
-    this._resetBtn = reset;
     const groupAll = card.querySelector(".groupall");
     groupAll.textContent = this._t("group_all");
     groupAll.addEventListener("click", () => {
@@ -674,8 +671,6 @@ class SweetSpotCard extends Base {
       this._storageFull ? this._t("storage_full") : "",
     ].filter(Boolean).join(" ");
 
-    const active = this._activeItem();
-
     if (this._local && !this._dragging && Date.now() > this._localUntil) this._local = null;
     const dot = this._local || this._dotFromState();
     this._drawDot(dot);
@@ -688,8 +683,7 @@ class SweetSpotCard extends Base {
       this._mval.textContent = mean === null ? "–" : `${pct} %`;
     }
 
-    this._hint.textContent = this._t(this._positions ? "drag_hint" : "drag_hint_free");
-    this._resetBtn.hidden = !active;
+    this._hint.textContent = this._t(this._positions ? "tap_hint" : "drag_hint");
     this._groupBtn.hidden = !this._group().missing.some(Boolean);
   }
 
@@ -788,6 +782,7 @@ class SweetSpotCard extends Base {
   }
 
   _dragStart(e) {
+    if (e.target.closest?.(".speaker.ungrouped")) return; // a tap there joins it
     this._dragging = true;
     this._svg.setPointerCapture(e.pointerId);
     this._local = this._toRoom(e);
@@ -812,20 +807,35 @@ class SweetSpotCard extends Base {
     this._apply(this._local);
   }
 
+  /** A tap selects the nearest place, so it need not hit the small symbol. */
+  _tap(e) {
+    const p = this._toRoom(e);
+    let best = null;
+    let bestDist = this._u * 12;
+    for (const { item } of this._markers) {
+      const q = this._itemPos(item);
+      const d = Math.hypot(q.x - p.x, q.y - p.y);
+      if (d < bestDist) {
+        best = item;
+        bestDist = d;
+      }
+    }
+    if (best && best !== this._activeItem()) this._selectPosition(best);
+  }
+
   _selectPosition(item) {
     this._local = null;
     this._hass.callService("input_select", "select_option", {
       entity_id: this._positions.entity,
       option: item.option,
     });
-  }
-
-  _resetToMarker() {
-    const item = this._activeItem();
-    if (!item) return;
-    this._local = { x: item.x, y: item.y };
-    this._localUntil = Date.now() + 3000;
-    this._apply(this._local);
+    // Without the automation or balance helpers nobody else sets the volumes.
+    const pos = this._positions;
+    if (pos.apply === "automation" || pos.weight_entity) return;
+    const c = this._config;
+    const weights = decodeWeights(this._stored()[item.option], c.speakers)
+      || computeBalance(this._itemPos(item), c.speakers, c);
+    this._setVolumes(weights);
   }
 
   /* ---------------- overall volume ---------------- */
@@ -839,7 +849,7 @@ class SweetSpotCard extends Base {
     if (item && this._positions.weight_entity) {
       // Use the stored balance so rounding at low volumes does not add up.
       const weights = c.speakers.map((s) => {
-        const v = Number(this._hass.states[this._weightEntity(item, s)]?.state);
+        const v = Number(this._hass.states[weightEntity(this._positions.weight_entity, item, s)]?.state);
         return Number.isFinite(v) ? v : 0;
       });
       return volumesForMean(target, weights);
@@ -923,54 +933,18 @@ class SweetSpotCard extends Base {
     }, 800);
   }
 
-  async _apply(dot) {
-    const c = this._config;
-    const weights = computeBalance(dot, c.speakers, c);
-    const item = this._activeItem();
-    const pos = this._positions;
+  _apply(dot) {
+    this._free = dot;
+    return this._setVolumes(computeBalance(dot, this._config.speakers, this._config));
+  }
 
-    if (item && pos.storage) {
-      const stored = this._stored();
-      stored[item.option] = encodeEntry(dot, weights, c.speakers);
-      let value = JSON.stringify(stored);
-      this._storageFull = value.length > STORAGE_MAX;
-      if (this._storageFull) {
-        // Keep at least the position of the dot.
-        stored[item.option] = [dot.x, dot.y];
-        value = JSON.stringify(stored);
-      }
-      if (value.length <= STORAGE_MAX) {
-        this._hass.callService("input_text", "set_value", { entity_id: pos.storage, value });
-      }
-    } else if (!item) {
-      this._free = dot;
-    }
-
-    // With apply: automation the blueprint reads the balance from the memory
-    // helper and sets the volumes, so the card must not set them as well.
-    if (item && pos.apply === "automation" && !pos.weight_entity) return;
-
-    if (item && pos.weight_entity) {
-      // Weights go into helpers; an automation in HA turns them into volumes.
-      await Promise.all(c.speakers.map((s, i) => {
-        const entity = this._weightEntity(item, s);
-        const st = this._hass.states[entity];
-        const step = st?.attributes.step || 0.1;
-        const value = Math.round(weights[i] / step) * step;
-        if (st && Math.abs(Number(st.state) - value) < step / 2) return null;
-        return this._hass.callService("input_number", "set_value", {
-          entity_id: entity,
-          value: Math.round(value * 1000) / 1000,
-        });
-      }));
-      return;
-    }
-
-    // No helpers configured: set the volumes directly, keeping the mean.
-    const volumes = computeVolumes(this._currentVolumes(), weights);
+  /** Sets the volumes for the given balance, keeping the mean. */
+  async _setVolumes(weights) {
+    const current = this._currentVolumes();
+    const volumes = computeVolumes(current, weights);
     if (!volumes) return;
-    await Promise.all(c.speakers.map((s, i) => {
-      if (this._currentVolumes()[i] === null) return null;
+    await Promise.all(this._config.speakers.map((s, i) => {
+      if (current[i] === null) return null;
       return this._hass.callService("media_player", "volume_set", {
         entity_id: s.entity,
         volume_level: volumes[i],
@@ -1012,7 +986,7 @@ const EDITOR_STRINGS = {
     strength: "Strength",
     master: "Overall volume slider",
     plan: "Floor plan",
-    plan_hint: "Drag speakers, places and the square handle of the L-shape into position.",
+    plan_hint: "Drag speakers, places and the square handle of the L-shape into position. Places can only be moved here; on the card a tap selects them. A moved place takes effect right away.",
     speakers: "Speakers",
     add_speaker: "Add speaker",
     remove: "Remove",
@@ -1042,6 +1016,7 @@ const EDITOR_STRINGS = {
     helper_memory: "Sweet Spot memory",
     automation_alias: "Sweet Spot – apply place",
     custom_note: "The room uses a custom outline from YAML. Choose a shape to replace it.",
+    storage_full: "The memory helper is full (255 characters); this place was not saved. Use shorter place names or fewer places.",
   },
   de: {
     title: "Titel",
@@ -1062,7 +1037,7 @@ const EDITOR_STRINGS = {
     strength: "Stärke",
     master: "Regler für Gesamtlautstärke",
     plan: "Grundriss",
-    plan_hint: "Lautsprecher, Plätze und den eckigen Griff der L-Form an ihren Ort ziehen.",
+    plan_hint: "Lautsprecher, Plätze und den eckigen Griff der L-Form an ihren Ort ziehen. Plätze lassen sich nur hier verschieben, auf der Karte wählt man sie durch Antippen. Ein verschobener Platz gilt sofort.",
     speakers: "Lautsprecher",
     add_speaker: "Lautsprecher hinzufügen",
     remove: "Entfernen",
@@ -1092,6 +1067,7 @@ const EDITOR_STRINGS = {
     helper_memory: "Sweet Spot Speicher",
     automation_alias: "Sweet Spot – Platz anwenden",
     custom_note: "Der Raum hat eine eigene Form aus YAML. Wähle eine Form, um sie zu ersetzen.",
+    storage_full: "Der Speicher-Helfer ist voll (255 Zeichen), dieser Platz wurde nicht gespeichert. Kürzere Platznamen oder weniger Plätze helfen.",
   },
 };
 
@@ -1463,6 +1439,10 @@ class SweetSpotCardEditor extends Base {
       this._setup.querySelector(".setup-run").disabled = true;
       this._setup.querySelector(".msg").textContent = this._t("setup_admin");
     }
+    if (!this._adopted) {
+      this._adopted = true;
+      this._adoptStored();
+    }
     this._drawPlan();
   }
 
@@ -1503,6 +1483,7 @@ class SweetSpotCardEditor extends Base {
       <h3>${this._t("plan")}</h3>
       <p class="hint">${this._t("plan_hint")}</p>
       <div class="plan"></div>
+      <p class="warn plan-warn"></p>
       <h3>${this._t("speakers")}</h3>
       <div class="speakers"></div>
       <p class="warn min-two">${this._t("min_two")}</p>
@@ -1558,6 +1539,7 @@ class SweetSpotCardEditor extends Base {
     this._syncBtn = root.querySelector(".sync");
     this._syncBtn.addEventListener("click", () => this._syncItems());
 
+    this._planWarn = root.querySelector(".plan-warn");
     this._svg = svgEl("svg");
     root.querySelector(".plan").appendChild(this._svg);
     this._svg.addEventListener("pointerdown", (e) => this._dragStart(e));
@@ -1669,6 +1651,7 @@ class SweetSpotCardEditor extends Base {
 
   _dragEnd(e) {
     if (!this._drag) return;
+    const { kind, index } = this._drag;
     this._drag = null;
     try {
       this._svg.releasePointerCapture(e.pointerId);
@@ -1677,8 +1660,72 @@ class SweetSpotCardEditor extends Base {
     }
     if (this._moved) {
       this._moved = false;
+      if (kind === "item") this._savePlace(this._config.positions.items[index]);
       this._fire();
     }
+  }
+
+  /* ---------------- places in HA ---------------- */
+
+  // The memory helper holds where each place is (it used to be dragged on the
+  // card), so the plan starts from there instead of the x/y in the config.
+  _adoptStored() {
+    const p = this._config.positions;
+    if (!p?.storage || !Array.isArray(p.items)) return;
+    let stored;
+    try {
+      stored = JSON.parse(this._hass.states[p.storage]?.state || "{}") || {};
+    } catch (err) {
+      return;
+    }
+    for (const item of p.items) {
+      const saved = stored[item.option];
+      if (Array.isArray(saved) && saved.length >= 2 && Number.isFinite(saved[0]) && Number.isFinite(saved[1])) {
+        item.x = saved[0];
+        item.y = saved[1];
+      }
+    }
+  }
+
+  // Saves a moved place right away, like dragging on the card did before, so
+  // every card sharing the memory and the automation pick it up.
+  _savePlace(item) {
+    const p = this._config.positions;
+    const speakers = this._config.speakers || [];
+    const hass = this._hass;
+    this._planWarn.textContent = "";
+    if (!hass || speakers.length < 2 || speakers.some((s) => !s.entity)) return;
+    const dot = { x: item.x, y: item.y };
+    const weights = computeBalance(dot, speakers, { ...DEFAULTS, ...this._config });
+
+    if (p.weight_entity) {
+      if (!item.id || speakers.some((s) => !s.id)) return;
+      speakers.forEach((s, i) => {
+        const entity = weightEntity(p.weight_entity, item, s);
+        const st = hass.states[entity];
+        if (!st) return;
+        const step = st.attributes.step || 0.1;
+        const value = Math.round(weights[i] / step) * step;
+        if (Math.abs(Number(st.state) - value) < step / 2) return;
+        hass.callService("input_number", "set_value", { entity_id: entity, value: Math.round(value * 1000) / 1000 });
+      });
+      return;
+    }
+
+    if (!p.storage || !hass.states[p.storage]) return;
+    let stored;
+    try {
+      stored = JSON.parse(hass.states[p.storage].state || "{}") || {};
+    } catch (err) {
+      stored = {};
+    }
+    stored[item.option] = encodeEntry(dot, weights, speakers);
+    const value = JSON.stringify(stored);
+    if (value.length > STORAGE_MAX) {
+      this._planWarn.textContent = this._t("storage_full");
+      return;
+    }
+    hass.callService("input_text", "set_value", { entity_id: p.storage, value });
   }
 }
 

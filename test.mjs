@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { computeWeights, computeVolumes, meanVolume, volumesForMean, pickColors, similarColors, roomOutline, outlineToShape, CORNERS, encodeEntry, decodeWeights, computeBalance, syncStorage, groupStatus } from "./sweet-spot-card.js";
+import { computeWeights, computeVolumes, meanVolume, volumesForMean, pickColors, similarColors, roomOutline, outlineToShape, CORNERS, encodeEntry, decodeWeights, computeBalance, syncStorage, groupStatus, weightEntity } from "./sweet-spot-card.js";
 
 const speakers = [
   { id: "front_left", x: 0.58, y: 0.64 },
@@ -131,4 +131,8 @@ assert.equal(tie.lead, B);
 const nog = groupStatus([{ entity: A, st: st("playing", [A]) }, { entity: B, st: st("idle", [B], undefined, 0) },
   { entity: C, st: { state: "unavailable", attributes: {} } }]);
 assert.deepEqual(nog.missing, [false, false, false]);
+
+// Balance helper names for the weight_entity pattern.
+assert.equal(weightEntity("input_number.balance_{position}_{speaker}", { id: "sofa" }, { id: "kitchen" }),
+  "input_number.balance_sofa_kitchen");
 console.log("ok");

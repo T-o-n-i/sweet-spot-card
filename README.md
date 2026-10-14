@@ -151,7 +151,7 @@ When you change `trim`, speaker positions, the room, `mode` or `strength`, the c
 
 ## Grouped speakers
 
-When something is playing, the card shows speakers that are not in the playing group as a dashed circle marked *not in group*. They are left out of the balance and the overall volume, so they keep whatever they are doing. Tap such a speaker to add it to the group, or use *Group all*. A joining speaker gets its share of the current volume, not its old volume, so nothing suddenly gets loud. A muted speaker is unmuted when it joins.
+When something is playing, the card shows speakers that are not in the playing group as a dashed circle marked *not in group*. They are left out of the balance and the overall volume, so they keep whatever they are doing. Tap such a speaker to add it to the group, or use *Group all*. A joining speaker gets its share of the current volume, not its old volume, so nothing suddenly gets loud. A muted speaker is unmuted when it joins. Muted speakers in the group are drawn faded and marked *muted*; tap one to unmute it. When the place changes, all muted speakers in the group are unmuted.
 
 The playing group is the one holding most of the card's speakers; on a tie, the one that started last.
 

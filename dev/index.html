@@ -36,11 +36,13 @@ const hass = {
     if (domain === "input_select") states[e] = { ...states[e], state: data.option };
     if (domain === "input_text") states[e] = { ...states[e], state: data.value };
     if (domain === "input_number") states[e] = { ...states[e], state: String(data.value) };
-    if (domain === "media_player") states[e] = { ...states[e], attributes: { ...states[e].attributes, volume_level: data.volume_level } };
+    if (domain === "media_player" && service === "volume_set") states[e] = { ...states[e], attributes: { ...states[e].attributes, volume_level: data.volume_level } };
+    if (domain === "media_player" && service === "volume_mute") states[e] = { ...states[e], attributes: { ...states[e].attributes, is_volume_muted: data.is_volume_muted } };
     card.hass = { ...hass, states: { ...states } };
     return Promise.resolve();
   },
 };
+window.ssc = { card, hass, states };
 card.setConfig(await (await fetch("config.json")).json());
 card.hass = hass;
 document.getElementById("host").appendChild(card);

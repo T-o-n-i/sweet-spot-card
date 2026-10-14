@@ -116,7 +116,7 @@ const st = (state, members, changed = "2026-10-01T10:00:00Z", features = 524288)
 const A = "media_player.a", B = "media_player.b", C = "media_player.c", D = "media_player.d";
 // Nothing plays: no lead, nobody missing.
 assert.deepEqual(groupStatus([{ entity: A, st: st("paused", [A]) }, { entity: B, st: st("idle", [B]) }]),
-  { lead: null, missing: [false, false] });
+  { lead: null, missing: [false, false], muted: [false, false] });
 // A+B play together, C idle alone, D plays something else: C and D are missing.
 const g = groupStatus([
   { entity: A, st: st("playing", [A, B]) }, { entity: B, st: st("playing", [A, B]) },
@@ -131,6 +131,14 @@ assert.equal(tie.lead, B);
 const nog = groupStatus([{ entity: A, st: st("playing", [A]) }, { entity: B, st: st("idle", [B], undefined, 0) },
   { entity: C, st: { state: "unavailable", attributes: {} } }]);
 assert.deepEqual(nog.missing, [false, false, false]);
+// Muted: only speakers that are not missing count, unavailable ones never.
+const mst = (state, members, changed) => ({ ...st(state, members, changed), attributes: { ...st(state, members, changed).attributes, is_volume_muted: true } });
+const mu = groupStatus([
+  { entity: A, st: st("playing", [A, B]) }, { entity: B, st: mst("playing", [A, B]) },
+  { entity: C, st: mst("idle", [C]) }, { entity: D, st: { state: "unavailable", attributes: { is_volume_muted: true } } },
+]);
+assert.deepEqual(mu.missing, [false, false, true, false]);
+assert.deepEqual(mu.muted, [false, true, false, false]);
 
 // Balance helper names for the weight_entity pattern.
 assert.equal(weightEntity("input_number.balance_{position}_{speaker}", { id: "sofa" }, { id: "kitchen" }),

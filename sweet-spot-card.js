@@ -6,7 +6,7 @@
  * MIT License
  */
 
-const CARD_VERSION = "1.1.1";
+const CARD_VERSION = "1.2.0";
 
 const DEFAULTS = {
   mode: "listener", // "listener": nearer speakers get quieter; "fader": nearer speakers get louder
@@ -68,6 +68,8 @@ const STRINGS = {
     speaker_join: "Add to group",
     missing: "Entity not found",
     ungrouped: "not in group",
+    muted: "muted",
+    speaker_unmute: "Unmute",
     group_all: "Group all",
     storage_full: "The memory helper is full (255 characters); the balance of this place was not saved. Use shorter place names or fewer places.",
   },
@@ -80,6 +82,8 @@ const STRINGS = {
     speaker_join: "Zur Gruppe hinzufügen",
     missing: "Entität nicht gefunden",
     ungrouped: "nicht in Gruppe",
+    muted: "stumm",
+    speaker_unmute: "Stumm aus",
     group_all: "Alle gruppieren",
     storage_full: "Der Speicher-Helfer ist voll (255 Zeichen), die Balance dieses Platzes wurde nicht gespeichert. Kürzere Platznamen oder weniger Plätze helfen.",
   },
@@ -203,12 +207,16 @@ function groupOf(entity, st) {
  * Finds the group that is playing and which speakers are outside of it.
  * `speakers` is a list of { entity, st } with st being the HA state object.
  * The lead group is the playing one holding most of the speakers; on a tie the
- * one that started last. Returns { lead, missing[] } where lead is the group
- * coordinator (or null if nothing plays) and missing[i] is true for speakers
- * that could join but are not in the lead group.
+ * one that started last. Returns { lead, missing[], muted[] } where lead is the
+ * group coordinator (or null if nothing plays), missing[i] is true for speakers
+ * that could join but are not in the lead group and muted[i] for speakers that
+ * are muted but not missing.
  */
 export function groupStatus(speakers) {
-  const none = { lead: null, missing: speakers.map(() => false) };
+  const muted = (missing) => speakers.map(({ st }, i) =>
+    !missing[i] && !!st && st.state !== "unavailable" && st.attributes?.is_volume_muted === true);
+  const nobody = speakers.map(() => false);
+  const none = { lead: null, missing: nobody, muted: muted(nobody) };
   let best = null;
   for (const { entity, st } of speakers) {
     if (st?.state !== "playing") continue;
@@ -220,13 +228,11 @@ export function groupStatus(speakers) {
     }
   }
   if (!best) return none;
-  return {
-    lead: best.coordinator,
-    missing: speakers.map(({ entity, st }) =>
-      !!st && st.state !== "unavailable"
-      && ((Number(st.attributes?.supported_features) || 0) & FEATURE_GROUPING) !== 0
-      && !groupOf(entity, st).includes(best.coordinator)),
-  };
+  const missing = speakers.map(({ entity, st }) =>
+    !!st && st.state !== "unavailable"
+    && ((Number(st.attributes?.supported_features) || 0) & FEATURE_GROUPING) !== 0
+    && !groupOf(entity, st).includes(best.coordinator));
+  return { lead: best.coordinator, missing, muted: muted(missing) };
 }
 
 /* ------------------------------- room shape ------------------------------- */
@@ -449,6 +455,7 @@ class SweetSpotCard extends Base {
         .speaker.ungrouped .box { fill: var(--card-background-color, #fff); stroke: var(--ssc-speaker); }
         .speaker.ungrouped .cone { stroke: var(--ssc-speaker); }
         .speaker.ungrouped .tweeter { fill: var(--ssc-speaker); }
+        .speaker.muted { cursor: pointer; opacity: .4; }
         .ray { stroke: var(--ssc-speaker); stroke-opacity: .25; }
         .ray.hidden, .waves:not(.on) { display: none; }
         .wave { fill: none; stroke: var(--ssc-speaker); stroke-linecap: round; }
@@ -565,10 +572,12 @@ class SweetSpotCard extends Base {
         svgEl("circle", { class: "tweeter", cy: -1.25, r: 0.4 }),
       );
       const join = (e) => {
-        if (!this._group().missing[i]) return; // otherwise a tap selects the nearest place
+        const group = this._group();
+        if (!group.missing[i] && !group.muted[i]) return; // otherwise a tap selects the nearest place
         e.stopPropagation();
         e.preventDefault();
-        this._join([i]);
+        if (group.missing[i]) this._join([i]);
+        else this._unmute([i]);
       };
       g.addEventListener("click", join);
       g.addEventListener("keydown", (e) => {
@@ -716,12 +725,14 @@ class SweetSpotCard extends Base {
       const el = this._speakerEls[i];
       const ungrouped = group.missing[i];
       const off = current[i] === null && !ungrouped;
+      const muted = group.muted[i] && !off;
       el.g.classList.toggle("off", off);
       el.g.classList.toggle("ungrouped", ungrouped);
-      if (ungrouped) {
+      el.g.classList.toggle("muted", muted);
+      if (ungrouped || muted) {
         el.g.setAttribute("tabindex", 0);
         el.g.setAttribute("role", "button");
-        el.g.setAttribute("aria-label", `${el.name}: ${this._t("speaker_join")}`);
+        el.g.setAttribute("aria-label", `${el.name}: ${this._t(ungrouped ? "speaker_join" : "speaker_unmute")}`);
       } else {
         el.g.removeAttribute("tabindex");
         el.g.removeAttribute("role");
@@ -734,13 +745,14 @@ class SweetSpotCard extends Base {
       el.g.setAttribute("transform", `translate(${s.x} ${s.y}) rotate(${angle - 90}) scale(${u * 1.25 * size})`);
       el.g.querySelector(".box").setAttribute("stroke-dasharray", ungrouped ? "0.7 0.45" : "none");
       // Waves only while this speaker plays along; a dashed line otherwise.
-      const playing = !ungrouped && !off && this._hass.states[s.entity]?.state === "playing";
+      const playing = !ungrouped && !off && !muted && this._hass.states[s.entity]?.state === "playing";
       this._waves[i].classList.toggle("on", playing);
       this._waves[i].setAttribute("transform", `translate(${s.x} ${s.y}) rotate(${angle})`);
       this._waves[i].setAttribute("stroke-width", u * Math.min(2.6, 0.6 + 0.7 * Math.pow(2, weights[i])));
       this._rays[i].classList.toggle("hidden", playing);
       if (ungrouped) el.vol.textContent = this._t("ungrouped");
       else if (off) el.vol.textContent = this._t("unavailable");
+      else if (muted) el.vol.textContent = this._t("muted");
       else if (this._dragging && preview) el.vol.textContent = `${Math.round(preview[i] * 100)} %`;
       else el.vol.textContent = `${Math.round(current[i] * 100)} %`;
     });
@@ -782,7 +794,7 @@ class SweetSpotCard extends Base {
   }
 
   _dragStart(e) {
-    if (e.target.closest?.(".speaker.ungrouped")) return; // a tap there joins it
+    if (e.target.closest?.(".speaker.ungrouped, .speaker.muted")) return; // a tap there joins or unmutes it
     this._dragging = true;
     this._svg.setPointerCapture(e.pointerId);
     this._local = this._toRoom(e);
@@ -836,6 +848,9 @@ class SweetSpotCard extends Base {
     const weights = decodeWeights(this._stored()[item.option], c.speakers)
       || computeBalance(this._itemPos(item), c.speakers, c);
     this._setVolumes(weights);
+    // A new place means "play here", so muted speakers in the group come back.
+    const { lead, muted } = this._group();
+    if (lead) this._unmute(muted.map((m, i) => (m ? i : -1)).filter((i) => i >= 0));
   }
 
   /* ---------------- overall volume ---------------- */
@@ -907,15 +922,19 @@ class SweetSpotCard extends Base {
       entity_id: lead,
       group_members: indices.map((i) => c.speakers[i].entity),
     });
-    await Promise.all(muted.map((i) => this._hass.callService("media_player", "volume_mute", {
-      entity_id: c.speakers[i].entity,
-      is_volume_muted: false,
-    })));
+    await this._unmute(muted);
     if (mean === null) return;
     const volumes = volumesForMean(mean, weights);
     await Promise.all(indices.map((i) => this._hass.callService("media_player", "volume_set", {
       entity_id: c.speakers[i].entity,
       volume_level: volumes[i],
+    })));
+  }
+
+  _unmute(indices) {
+    return Promise.all(indices.map((i) => this._hass.callService("media_player", "volume_mute", {
+      entity_id: this._config.speakers[i].entity,
+      is_volume_muted: false,
     })));
   }
 

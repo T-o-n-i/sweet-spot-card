@@ -151,11 +151,15 @@ When you change `trim`, speaker positions, the room, `mode` or `strength`, the c
 
 ## Grouped speakers
 
-When something is playing, the card shows speakers that are not in the playing group as a dashed circle marked *not in group*. They are left out of the balance and the overall volume, so they keep whatever they are doing. Tap such a speaker to add it to the group, or use *Group all*. A joining speaker gets its share of the current volume, not its old volume, so nothing suddenly gets loud. A muted speaker is unmuted when it joins. Muted speakers in the group are drawn faded and marked *muted*; tap one to unmute it. When the place changes, all muted speakers in the group are unmuted.
+When something is playing, the card shows speakers that are not in the playing group as a dashed circle marked *not in group*. They are left out of the balance and the overall volume, so they keep whatever they are doing. Tap such a speaker to add it to the group, or use *Group all*. A joining speaker gets its share of the current volume, not its old volume, so nothing suddenly gets loud. A muted speaker is unmuted when it joins.
 
 The playing group is the one holding most of the card's speakers; on a tie, the one that started last.
 
 With the blueprint, switch on **Group automatically** to do this whenever the place changes, including speakers that play something else. Grouping needs an integration that supports it (Sonos, HEOS, Squeezebox, Music Assistant, …); for others the card shows nothing.
+
+### Muted speakers
+
+A speaker stays muted when it joins a group, so a group can seem to play on fewer speakers than it has. The card draws muted speakers in the group faded and marks them *muted*; tap one to unmute it. When the place changes, all muted speakers in the playing group are unmuted, by the blueprint automation or, without it, by the card. Saving a new balance in the editor leaves them muted.
 
 ## Overall volume
 
@@ -163,7 +167,7 @@ The slider below the room shows the average volume of all speakers. Moving it se
 
 ## Using the keyboard
 
-Without places, the listening position can be moved with the arrow keys once it has the focus (hold Shift for bigger steps). Places and speakers outside the group react to Enter and Space.
+Without places, the listening position can be moved with the arrow keys once it has the focus (hold Shift for bigger steps). Places, speakers outside the group and muted speakers react to Enter and Space.
 
 ## Troubleshooting
 
@@ -171,6 +175,7 @@ Without places, the listening position can be moved with the arrow keys once it 
 - **Nothing happens when you switch places:** check that the automation from the blueprint is on and uses the same helpers and speakers as the card.
 - **"The memory helper is full":** the `input_text` must have a maximum length of 255; shorter place names or fewer places help.
 - **A speaker shows "not in group":** it is not part of the playing group. Tap it, or turn on *Group automatically* in the automation.
+- **Only some speakers can be heard although all are grouped:** the others are probably muted. The card marks them *muted*; tap them or switch the place. If the automation does not unmute them, re-import the blueprint (version 1.2.0 or later).
 
 So far the card has been tested with Sonos speakers. Reports about other systems are welcome in the issues.
 

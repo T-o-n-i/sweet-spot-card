@@ -6,7 +6,7 @@
  * MIT License
  */
 
-const CARD_VERSION = "1.1.0";
+const CARD_VERSION = "1.1.1";
 
 const DEFAULTS = {
   mode: "listener", // "listener": nearer speakers get quieter; "fader": nearer speakers get louder
@@ -888,11 +888,14 @@ class SweetSpotCard extends Base {
 
   /* ---------------- grouping ---------------- */
 
-  /** Joins speakers to the playing group and gives them their share of the volume. */
+  /** Joins speakers to the playing group, unmutes them and gives them their share of the volume. */
   async _join(indices) {
     const { lead } = this._group();
     if (!lead || indices.length === 0) return;
     const c = this._config;
+    // A muted speaker stays muted after the join, so the group would seem to
+    // play on fewer speakers than it has.
+    const muted = indices.filter((i) => this._hass.states[c.speakers[i].entity]?.attributes?.is_volume_muted === true);
     // Mean of the speakers that already play, taken before the join, so a
     // joining speaker with a high old volume does not make everything louder.
     const mean = meanVolume(this._currentVolumes());
@@ -904,6 +907,10 @@ class SweetSpotCard extends Base {
       entity_id: lead,
       group_members: indices.map((i) => c.speakers[i].entity),
     });
+    await Promise.all(muted.map((i) => this._hass.callService("media_player", "volume_mute", {
+      entity_id: c.speakers[i].entity,
+      is_volume_muted: false,
+    })));
     if (mean === null) return;
     const volumes = volumesForMean(mean, weights);
     await Promise.all(indices.map((i) => this._hass.callService("media_player", "volume_set", {

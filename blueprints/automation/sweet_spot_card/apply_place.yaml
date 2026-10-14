@@ -14,7 +14,8 @@ blueprint:
 
     Speakers that are not in the playing group are left alone, unless
     "Group automatically" is on: then they join the playing group whenever the
-    place changes, even if they were playing something else.
+    place changes, even if they were playing something else. Muted speakers
+    are unmuted when they join.
   domain: automation
   author: T-o-n-i
   homeassistant:
@@ -47,9 +48,9 @@ blueprint:
       name: Group automatically
       description: >
         When the place changes, add speakers that are not in the playing group
-        to it, including speakers that play something else. Only works with
-        integrations that support grouping (Sonos, HEOS, Squeezebox, Music
-        Assistant, …).
+        to it, including speakers that play something else, and unmute them.
+        Only works with integrations that support grouping (Sonos, HEOS,
+        Squeezebox, Music Assistant, …).
       default: false
       selector:
         boolean: {}
@@ -140,6 +141,19 @@ actions:
           {{ group_info.missing | reject('in', state_attr(group_info.lead, 'group_members') or []) | list | count == 0 }}
         timeout: "00:00:05"
         continue_on_timeout: true
+      # A muted speaker stays muted after the join.
+      - variables:
+          muted: "{{ group_info.missing | select('is_state_attr', 'is_volume_muted', true) | list }}"
+      - if:
+          - condition: template
+            value_template: "{{ muted | count > 0 }}"
+        then:
+          - action: media_player.volume_mute
+            target:
+              entity_id: "{{ muted }}"
+            data:
+              is_volume_muted: false
+            continue_on_error: true
   # Entries look like {"Sofa": [x, y, w1, w2, …]}; the weights are tenths,
   # ordered by speaker entity_id. Without an entry all speakers play equally.
   - variables:

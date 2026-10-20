@@ -17,7 +17,7 @@ Sitting in the armchair next to the top-left speaker (left) and at the dining ta
 
 ## Quick start
 
-1. Install the card with HACS (see below) and reload the browser.
+1. Search for *Sweet Spot* in HACS, install it and reload the browser.
 2. Edit a dashboard, add the *Sweet Spot Card* and pick your speakers.
 3. Drag the speakers on the floor plan to where they stand, and set the room size and shape.
 4. Under *Quick setup*, enter your listening places (e.g. `Sofa, Dining table, Kitchen`) and press *Set up places*. This creates the two helpers and the automation for you (administrator account needed).
@@ -37,9 +37,9 @@ The card balances `media_player` entities against each other. That works best wi
 
 ### HACS
 
-1. HACS → three-dot menu → *Custom repositories*
-2. Repository `https://github.com/T-o-n-i/sweet-spot-card`, type *Dashboard*
-3. Install *Sweet Spot Card* and reload the browser
+Search for *Sweet Spot* in HACS, install it and reload the browser. Or open it in HACS directly:
+
+[![Open in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=T-o-n-i&repository=sweet-spot-card&category=plugin)
 
 ### Manual
 
